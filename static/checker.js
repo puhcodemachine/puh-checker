@@ -268,14 +268,12 @@
 
     function sync(ta, hl) { hl.style.transform = "translate(" + (-ta.scrollLeft) + "px," + (-ta.scrollTop) + "px)"; }
 
-    var tgPodbor = document.getElementById("tg-podbor");
     var lsBox = document.getElementById("lang-scan");
 
     function renderLangScan() {
       if (!lsBox) return;
-      var on = tgPodbor && tgPodbor.checked;
       var hasInput = taW.value.trim() || taN.value.trim();
-      if (!on || !hasInput) { lsBox.className = "lang-scan hidden"; lsBox.innerHTML = ""; return; }
+      if (!hasInput) { lsBox.className = "lang-scan hidden"; lsBox.innerHTML = ""; return; }
       lsBox.className = "lang-scan";
       var res = languageScan(taW.value, taN.value);
       var fromWords = !!taW.value.trim();
@@ -317,7 +315,6 @@
       ta.addEventListener("input", run);
       ta.addEventListener("scroll", function () { sync(ta, hl); });
     });
-    if (tgPodbor) tgPodbor.addEventListener("change", renderLangScan);
     run();
   });
 })(typeof window !== "undefined" ? window : globalThis);

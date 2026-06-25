@@ -47,10 +47,21 @@
 
   /* верхняя терминальная строка */
   .topbar{display:flex;justify-content:space-between;align-items:center;
-    padding:6px 14px;border-bottom:1px solid var(--green-dim);
+    padding:5px 14px;border-bottom:1px solid var(--green-dim);
     font-size:13px;letter-spacing:1px;color:var(--green);text-shadow:0 0 6px rgba(67,255,125,.5)}
-  .topbar .sys{opacity:.8}
   .topbar .blink::after{content:"_";animation:blink 1.1s steps(1) infinite}
+
+  /* кликабельный логотип -> на главную */
+  .brand-logo{display:flex;align-items:center;gap:10px;text-decoration:none;color:var(--green)}
+  .brand-logo .emblem{width:24px;height:24px;display:grid;place-items:center;border-radius:4px;
+    background:linear-gradient(135deg,var(--green),#27c4ff);color:#04130a;font-weight:800;font-size:14px;
+    box-shadow:0 0 10px rgba(67,255,125,.4);transition:.12s}
+  .brand-logo .brand-txt{font-size:14px;letter-spacing:2px;text-shadow:0 0 6px rgba(67,255,125,.45)}
+  .brand-logo .brand-txt i{color:var(--muted);font-style:normal}
+  .brand-logo .brand-tag{font-size:10px;letter-spacing:2px;color:var(--muted);
+    border:1px solid var(--line);padding:1px 6px;border-radius:3px;margin-left:2px}
+  .brand-logo:hover .brand-txt{text-shadow:0 0 12px rgba(67,255,125,.8)}
+  .brand-logo:hover .emblem{filter:brightness(1.18);box-shadow:0 0 16px rgba(67,255,125,.6)}
   @keyframes blink{50%{opacity:0}}
 
   .app{flex:1;display:flex;min-height:0}
@@ -97,6 +108,8 @@
   .task-meta{display:flex;justify-content:space-between;border-top:1px dashed var(--line);
     padding-top:8px;font-size:11px;color:var(--muted)}
   .task-meta .v{color:var(--txt);font-size:13px;display:block;margin-top:2px}
+  .empty-tasks{padding:46px 16px;text-align:center;color:var(--muted);font-size:13px;line-height:1.7;letter-spacing:.5px}
+  .empty-tasks span{font-size:11px;opacity:.7}
 
   /* ПРАВОЕ ПОЛЕ */
   .main{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0}
@@ -179,7 +192,11 @@
 <body>
   <div class="frame">
     <div class="topbar">
-      <span class="sys">ROBCO INDUSTRIES (TM) TERMLINK · ПУХ-CHECKER</span>
+      <a href="/" class="brand-logo" title="На главную панели">
+        <span class="emblem">П</span>
+        <span class="brand-txt">ПУХ<i>·ROBCO</i></span>
+        <span class="brand-tag">TERMLINK</span>
+      </a>
       <span class="blink">// SESSION: PUH · ONLINE </span>
     </div>
     <div class="app">
@@ -188,14 +205,16 @@
       <aside class="sidebar">
         <div class="side-head">
           <h2>&gt; АКТИВНЫЕ ЗАДАНИЯ</h2>
-          <span class="count">[ 5 ]</span>
+          <span class="count">[ 0 ]</span>
         </div>
-        <div class="task-list">
+        <div class="task-list" id="task-list">
+          <div class="empty-tasks">нет активных заданий<br><span>создай новое во вкладке «Новое задание»</span></div>
 
+          <!-- ШАБЛОН КАРТОЧКИ ЗАДАНИЯ (визуал сохранён для будущего рендера):
           <div class="task">
             <div class="task-top">
               <span class="task-name">SEED-7F2A</span>
-              <span class="lamp green"></span>
+              <span class="lamp green"></span>            ← lamp: green | amber | red
             </div>
             <div class="task-status green">● РАБОТАЕТ</div>
             <div class="task-type">тип: сид-фраза · 12 слов</div>
@@ -204,59 +223,7 @@
               <span style="text-align:right">В РАБОТЕ<span class="v">00:12:45</span></span>
             </div>
           </div>
-
-          <div class="task">
-            <div class="task-top">
-              <span class="task-name">CODE-548</span>
-              <span class="lamp amber"></span>
-            </div>
-            <div class="task-status amber">◐ ОБРАБОТКА</div>
-            <div class="task-type">тип: цифровой код · 12 чисел</div>
-            <div class="task-meta">
-              <span>ЗАПУСК<span class="v">14:05:02</span></span>
-              <span style="text-align:right">В РАБОТЕ<span class="v">00:39:53</span></span>
-            </div>
-          </div>
-
-          <div class="task">
-            <div class="task-top">
-              <span class="task-name">SEED-3C19</span>
-              <span class="lamp red"></span>
-            </div>
-            <div class="task-status red">✕ ОШИБКА · CHECKSUM</div>
-            <div class="task-type">тип: сид-фраза · 24 слова</div>
-            <div class="task-meta">
-              <span>ЗАПУСК<span class="v">13:50:11</span></span>
-              <span style="text-align:right">В РАБОТЕ<span class="v">--:--:--</span></span>
-            </div>
-          </div>
-
-          <div class="task">
-            <div class="task-top">
-              <span class="task-name">SEED-9B40</span>
-              <span class="lamp green"></span>
-            </div>
-            <div class="task-status green">● РАБОТАЕТ</div>
-            <div class="task-type">тип: сид + passphrase</div>
-            <div class="task-meta">
-              <span>ЗАПУСК<span class="v">14:40:00</span></span>
-              <span style="text-align:right">В РАБОТЕ<span class="v">00:04:30</span></span>
-            </div>
-          </div>
-
-          <div class="task">
-            <div class="task-top">
-              <span class="task-name">CODE-1109</span>
-              <span class="lamp amber"></span>
-            </div>
-            <div class="task-status amber">◷ ОЖИДАНИЕ ОЧЕРЕДИ</div>
-            <div class="task-type">тип: цифровой код</div>
-            <div class="task-meta">
-              <span>ЗАПУСК<span class="v">14:44:20</span></span>
-              <span style="text-align:right">В РАБОТЕ<span class="v">00:00:10</span></span>
-            </div>
-          </div>
-
+          -->
         </div>
       </aside>
 
@@ -288,13 +255,14 @@
             </div>
             <div class="vstatus muted" id="st-cross"></div>
 
+            <!-- БАЗОВАЯ ПРОВЕРКА 3: языковой подбор (всегда включён, как строки 1 и 2) -->
+            <div class="lang-scan hidden" id="lang-scan"></div>
+
             <div class="toggles">
-              <div class="flabel">&gt; РЕЖИМЫ ЗАДАНИЯ</div>
-              <label class="toggle"><input type="checkbox" id="tg-podbor"><span class="sw"></span><span class="tg-name">ЯЗЫКОВОЙ ПОДБОР</span></label>
+              <div class="flabel">&gt; РЕЖИМЫ ЗАДАНИЯ (скоро)</div>
+              <label class="toggle"><input type="checkbox" id="tg-podbor"><span class="sw"></span><span class="tg-name">ПОДБОР</span></label>
               <label class="toggle"><input type="checkbox" id="tg-monitor"><span class="sw"></span><span class="tg-name">МОНИТОРИНГ</span></label>
             </div>
-
-            <div class="lang-scan hidden" id="lang-scan"></div>
           </section>
 
           <section class="pane hidden" data-pane="edit">
