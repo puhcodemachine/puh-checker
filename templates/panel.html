@@ -196,6 +196,20 @@
   .ls-sum{font-size:13px;letter-spacing:.5px;padding-top:10px;border-top:1px dashed var(--line)}
   .ls-sum.green{color:#39ff6a;text-shadow:0 0 8px rgba(57,255,106,.35)}
   .ls-sum.red{color:#ff6b6b}
+
+  /* кнопка НАЧАТЬ ЗАДАНИЕ */
+  .btn-start{margin-top:28px;padding:13px 28px;border:0;cursor:pointer;
+    background:linear-gradient(135deg,var(--green),#27c4ff);color:#04130a;
+    font-family:inherit;font-size:15px;font-weight:700;letter-spacing:2px;
+    box-shadow:0 0 16px rgba(67,255,125,.3);transition:.12s}
+  .btn-start:hover{filter:brightness(1.1);box-shadow:0 0 24px rgba(67,255,125,.5);transform:translateY(-1px)}
+  .btn-start:disabled{opacity:.6;cursor:default;transform:none}
+
+  /* всплывающее уведомление */
+  .toast{position:fixed;bottom:22px;right:24px;z-index:50;background:#0b140b;border:1px solid var(--green);
+    color:var(--green);padding:11px 16px;font-size:13px;letter-spacing:1px;opacity:0;transform:translateY(8px);
+    transition:.2s;pointer-events:none;box-shadow:0 0 18px rgba(67,255,125,.3)}
+  .toast.show{opacity:1;transform:translateY(0)}
 </style>
 </head>
 <body>
@@ -214,7 +228,7 @@
       <aside class="sidebar">
         <div class="side-head">
           <h2>&gt; АКТИВНЫЕ ЗАДАНИЯ</h2>
-          <span class="count">[ 0 ]</span>
+          <span class="count" id="task-count">[ 0 ]</span>
         </div>
         <div class="task-list" id="task-list">
           <div class="empty-tasks">нет активных заданий<br><span>создай новое во вкладке «Новое задание»</span></div>
@@ -280,6 +294,8 @@
               <label class="toggle"><input type="checkbox" id="tg-podbor"><span class="sw"></span><span class="tg-name">ПОДБОР</span></label>
               <label class="toggle"><input type="checkbox" id="tg-monitor"><span class="sw"></span><span class="tg-name">МОНИТОРИНГ</span></label>
             </div>
+
+            <button class="btn-start" id="btn-start">▶ НАЧАТЬ ЗАДАНИЕ</button>
           </section>
 
           <section class="pane hidden" data-pane="edit">
@@ -291,9 +307,11 @@
 
     </div>
   </div>
+  <div class="toast" id="toast"></div>
   <script src="/static/bip39.js"></script>
   <script src="/static/bip39_langs.js"></script>
   <script src="/static/checker.js"></script>
+  <script src="/static/tasks.js"></script>
   <script>
     function selTab(el){
       document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));

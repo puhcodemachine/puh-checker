@@ -3,6 +3,9 @@ auth.json
 .gh_token
 *.log
 
+# задания содержат seed-фразы — НЕ коммитим
+data/
+
 # python
 __pycache__/
 *.pyc
