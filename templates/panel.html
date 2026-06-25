@@ -111,8 +111,47 @@
   .tab.active{background:var(--green);color:#04130a;text-shadow:none;box-shadow:0 0 14px rgba(67,255,125,.4)}
 
   /* РАБОЧАЯ ОБЛАСТЬ ПОД МЕНЮ */
-  .workspace{flex:1;display:flex;align-items:center;justify-content:center;color:var(--green-dim);
-    font-size:14px;letter-spacing:2px;opacity:.55}
+  .workspace{flex:1;overflow-y:auto;padding:22px 26px}
+  .pane{max-width:960px}
+  .pane.hidden{display:none}
+  .placeholder{color:var(--green-dim);opacity:.55;letter-spacing:2px;padding:60px 0;text-align:center}
+
+  .field{margin-bottom:18px}
+  .flabel{font-size:12px;color:var(--green);letter-spacing:1.5px;margin:0 0 8px;
+    text-shadow:0 0 6px rgba(67,255,125,.35)}
+
+  /* редактор с подсветкой (textarea поверх подложки) */
+  .editor{position:relative;border:1px solid var(--line);background:#070f07;height:84px;overflow:hidden}
+  .editor:focus-within{border-color:var(--green);box-shadow:0 0 12px rgba(67,255,125,.18)}
+  .editor .backdrop{position:absolute;inset:0;overflow:hidden;pointer-events:none}
+  .editor .hl,.editor textarea{
+    margin:0;padding:11px 13px;border:0;width:100%;box-sizing:border-box;
+    font-family:'Share Tech Mono',ui-monospace,monospace;font-size:16px;line-height:1.55;letter-spacing:.5px;
+    white-space:pre-wrap;overflow-wrap:break-word;word-break:break-word}
+  .editor .hl{color:var(--txt);min-height:100%}
+  .editor textarea{position:absolute;inset:0;height:100%;background:transparent;color:transparent;
+    caret-color:var(--green);resize:none;outline:none;overflow:auto;z-index:2}
+  .editor textarea::placeholder{color:#2e6b45}
+  .hl .tok.ok{color:var(--txt)}
+  .hl .tok.bad{color:#ff6b6b;text-decoration:underline wavy #ff4d4d;text-underline-offset:3px}
+
+  .vstatus{font-size:13px;margin:8px 0 0;letter-spacing:.5px;min-height:18px}
+  .vstatus.muted{color:var(--muted)}
+  .vstatus.green{color:#39ff6a;text-shadow:0 0 8px rgba(57,255,106,.35)}
+  .vstatus.amber{color:#ffd23f}
+  .vstatus.red{color:#ff6b6b}
+
+  /* тумблеры режимов */
+  .toggles{margin-top:24px;border-top:1px dashed var(--line);padding-top:18px;
+    display:flex;flex-direction:column;gap:15px}
+  .toggle{display:flex;align-items:center;gap:14px;cursor:pointer;user-select:none;width:max-content}
+  .toggle input{display:none}
+  .toggle .sw{width:54px;height:24px;border:1px solid var(--green-dim);background:#081008;position:relative;transition:.15s;flex-shrink:0}
+  .toggle .sw::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;background:var(--green-dim);transition:.15s}
+  .toggle input:checked + .sw{border-color:var(--green);box-shadow:0 0 12px rgba(67,255,125,.3)}
+  .toggle input:checked + .sw::after{left:32px;background:var(--green);box-shadow:0 0 10px var(--green)}
+  .toggle .tg-name{font-size:15px;letter-spacing:1.5px;color:var(--muted)}
+  .toggle input:checked ~ .tg-name{color:var(--green);text-shadow:0 0 8px rgba(67,255,125,.5)}
 </style>
 </head>
 <body>
@@ -202,18 +241,57 @@
       <!-- ПРАВОЕ ПОЛЕ -->
       <main class="main">
         <nav class="topnav">
-          <div class="tab active" onclick="selTab(this)"><span class="ico">＋</span>НОВОЕ ЗАДАНИЕ</div>
-          <div class="tab" onclick="selTab(this)"><span class="ico">✎</span>ИЗМЕНИТЬ ЗАДАНИЕ</div>
+          <div class="tab active" data-target="new" onclick="selTab(this)"><span class="ico">＋</span>НОВОЕ ЗАДАНИЕ</div>
+          <div class="tab" data-target="edit" onclick="selTab(this)"><span class="ico">✎</span>ИЗМЕНИТЬ ЗАДАНИЕ</div>
         </nav>
-        <div class="workspace">[ РАБОЧАЯ ОБЛАСТЬ ]</div>
+        <div class="workspace">
+
+          <section class="pane" data-pane="new">
+            <div class="field">
+              <div class="flabel">&gt; СТРОКА 1 — СЛОВА (СИД-ФРАЗА) · живая проверка</div>
+              <div class="editor">
+                <div class="backdrop"><div class="hl" id="hl-words"></div></div>
+                <textarea id="ta-words" spellcheck="false" autocomplete="off" placeholder="вставь имеющиеся слова через пробел…"></textarea>
+              </div>
+              <div class="vstatus muted" id="st-words">введите слова сид-фразы</div>
+            </div>
+
+            <div class="field">
+              <div class="flabel">&gt; СТРОКА 2 — ЦИФРОВОЙ КОД (ИНДЕКСЫ) · сверка со словами</div>
+              <div class="editor">
+                <div class="backdrop"><div class="hl" id="hl-nums"></div></div>
+                <textarea id="ta-nums" spellcheck="false" autocomplete="off" placeholder="вставь имеющиеся числа через пробел…"></textarea>
+              </div>
+              <div class="vstatus muted" id="st-nums"></div>
+            </div>
+            <div class="vstatus muted" id="st-cross"></div>
+
+            <div class="toggles">
+              <div class="flabel">&gt; РЕЖИМЫ ЗАДАНИЯ</div>
+              <label class="toggle"><input type="checkbox" id="tg-podbor"><span class="sw"></span><span class="tg-name">ПОДБОР</span></label>
+              <label class="toggle"><input type="checkbox" id="tg-monitor"><span class="sw"></span><span class="tg-name">МОНИТОРИНГ</span></label>
+            </div>
+          </section>
+
+          <section class="pane hidden" data-pane="edit">
+            <div class="placeholder">[ ИЗМЕНИТЬ ЗАДАНИЕ — раздел в разработке ]</div>
+          </section>
+
+        </div>
       </main>
 
     </div>
   </div>
+  <script src="/static/bip39.js"></script>
+  <script src="/static/checker.js"></script>
   <script>
     function selTab(el){
       document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
       el.classList.add('active');
+      var t = el.getAttribute('data-target');
+      document.querySelectorAll('.pane').forEach(function(p){
+        p.classList.toggle('hidden', p.getAttribute('data-pane') !== t);
+      });
     }
   </script>
 </body>

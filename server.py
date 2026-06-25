@@ -67,8 +67,29 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_header(k, v)
         self.end_headers()
 
+    def _serve_static(self, path):
+        rel = path[len("/static/"):]
+        if not rel or "/" in rel or ".." in rel:
+            return self.send_error(404)
+        fp = os.path.join(BASE, "static", rel)
+        if not os.path.isfile(fp):
+            return self.send_error(404)
+        ctype = ("application/javascript; charset=utf-8" if rel.endswith(".js")
+                 else "text/css; charset=utf-8" if rel.endswith(".css")
+                 else "application/octet-stream")
+        with open(fp, "rb") as f:
+            data = f.read()
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        self.wfile.write(data)
+
     def do_GET(self):
         path = self.path.split("?")[0]
+        if path.startswith("/static/"):
+            return self._serve_static(path)
         if path == "/login":
             return self._send_html(tpl("login.html").replace("{{ERROR}}", ""))
         if path == "/logout":
