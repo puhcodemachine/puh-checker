@@ -164,10 +164,66 @@
     return res;
   }
 
+  // ---------- ЯЗЫКОВОЙ ПОДБОР ----------
+  var LANG_NAMES = {
+    english: "Английский", french: "Французский", italian: "Итальянский",
+    spanish: "Испанский", portuguese: "Португальский", czech: "Чешский",
+    korean: "Корейский", chinese_simplified: "Кит. упрощ.", chinese_traditional: "Кит. трад."
+  };
+  function langs() { return root.BIP39_LANGS || {}; }
+  var _lidx = {};
+  function langIdxMap(lang) {
+    if (!_lidx[lang]) { var m = {}, w = langs()[lang] || []; for (var i = 0; i < w.length; i++) m[w[i]] = i; _lidx[lang] = m; }
+    return _lidx[lang];
+  }
+  function checksumOkFromIndices(idx) {
+    if (VALID_LEN.indexOf(idx.length) === -1) return false;
+    for (var i = 0; i < idx.length; i++) if (idx[i] < 0 || idx[i] > 2047) return false;
+    var bits = idx.map(function (i) { return ("00000000000" + i.toString(2)).slice(-11); }).join("");
+    var total = idx.length * 11, cs = total / 33, entBits = total - cs;
+    var entropy = bits.slice(0, entBits), csBits = bits.slice(entBits);
+    var bytes = new Uint8Array(entBits / 8);
+    for (i = 0; i < bytes.length; i++) bytes[i] = parseInt(entropy.substr(i * 8, 8), 2);
+    var h = sha256(bytes), hb = "";
+    for (i = 0; i < Math.ceil(cs / 8); i++) hb += ("00000000" + h[i].toString(2)).slice(-8);
+    return hb.slice(0, cs) === csBits;
+  }
+  function chooseBase(nums) { return Math.max.apply(null, nums) > 2047 ? 1 : 0; }
+
+  // По всем языковым словарям: из слов ИЛИ из чисел собираем фразу и проверяем checksum.
+  function languageScan(wordsText, numsText) {
+    var wt = tokWords(wordsText), nums = tokNums(numsText), out = [];
+    var L = langs(), fromWords = wt.length > 0;
+    Object.keys(L).forEach(function (lang) {
+      var r = { lang: lang, name: LANG_NAMES[lang] || lang, source: fromWords ? "words" : "nums",
+                count: 0, allKnown: false, valid: false, words: null, base: null, note: "" };
+      if (fromWords) {
+        var m = langIdxMap(lang), idx = wt.map(function (w) { return (w in m) ? m[w] : -1; });
+        var known = idx.indexOf(-1) === -1;
+        r.count = wt.length; r.allKnown = known;
+        if (known && VALID_LEN.indexOf(wt.length) !== -1) { r.valid = checksumOkFromIndices(idx); r.words = wt.slice(); }
+        else if (!known) r.note = "нет в словаре: " + idx.filter(function (x) { return x === -1; }).length + " сл.";
+        else r.note = "невалидная длина: " + wt.length;
+      } else if (nums.length) {
+        var base = chooseBase(nums), idx2 = nums.map(function (n) { return n - base; });
+        var inRange = idx2.every(function (x) { return x >= 0 && x <= 2047; });
+        r.count = nums.length; r.base = base;
+        if (inRange && VALID_LEN.indexOf(nums.length) !== -1) {
+          var wlst = L[lang]; r.words = idx2.map(function (x) { return wlst[x]; });
+          r.allKnown = true; r.valid = checksumOkFromIndices(idx2);
+        } else r.note = inRange ? ("невалидная длина: " + nums.length) : "числа вне диапазона 0..2047";
+      } else { r.note = "нет данных"; }
+      out.push(r);
+    });
+    out.sort(function (a, b) { return (b.valid - a.valid) || (b.allKnown - a.allKnown); });
+    return out;
+  }
+
   var core = {
     sha256: sha256, bip39ChecksumOk: bip39ChecksumOk,
     validateWords: validateWords, crossCheck: crossCheck,
-    tokWords: tokWords, tokNums: tokNums, wordIndex: wordIndex
+    tokWords: tokWords, tokNums: tokNums, wordIndex: wordIndex,
+    checksumOkFromIndices: checksumOkFromIndices, languageScan: languageScan
   };
   root.PUHCORE = core;
 
@@ -212,6 +268,37 @@
 
     function sync(ta, hl) { hl.style.transform = "translate(" + (-ta.scrollLeft) + "px," + (-ta.scrollTop) + "px)"; }
 
+    var tgPodbor = document.getElementById("tg-podbor");
+    var lsBox = document.getElementById("lang-scan");
+
+    function renderLangScan() {
+      if (!lsBox) return;
+      var on = tgPodbor && tgPodbor.checked;
+      var hasInput = taW.value.trim() || taN.value.trim();
+      if (!on || !hasInput) { lsBox.className = "lang-scan hidden"; lsBox.innerHTML = ""; return; }
+      lsBox.className = "lang-scan";
+      var res = languageScan(taW.value, taN.value);
+      var fromWords = !!taW.value.trim();
+      var anyValid = res.some(function (r) { return r.valid; });
+      var h = '<div class="ls-head">&gt; ЯЗЫКОВОЙ ПОДБОР · базовая проверка (' +
+              (fromWords ? "из слов" : "из чисел") + ')</div>';
+      if (!fromWords)
+        h += '<div class="ls-note">контрольная сумма для числового кода одинакова на всех языках (зависит от индексов, не от языка) — язык меняет только слова</div>';
+      h += '<div class="ls-list">';
+      res.forEach(function (r) {
+        var cls = r.valid ? "valid" : (r.allKnown ? "known" : "miss");
+        var st = r.valid ? "✓ ВАЛИДНА" : (r.allKnown ? "✗ checksum не сходится" : "— " + (r.note || "нет в словаре"));
+        var sample = r.words ? r.words.slice(0, 4).join(" ") + (r.words.length > 4 ? " …" : "") : "";
+        h += '<div class="ls-row ' + cls + '"><span class="ls-lang">' + r.name + '</span>' +
+             '<span class="ls-st">' + st + '</span><span class="ls-words">' + esc(sample) + '</span></div>';
+      });
+      h += '</div><div class="ls-sum ' + (anyValid ? "green" : "red") + '">' +
+           (anyValid ? "✓ найден язык с валидной фразой (зелёная строка)"
+                     : "✗ ни один язык не даёт валидную фразу — причина не в языке (ошибка в слове/порядке → следующие режимы)") +
+           '</div>';
+      lsBox.innerHTML = h;
+    }
+
     function run() {
       var vw = validateWords(taW.value);
       hlW.innerHTML = highlightWords(taW.value, vw.bad.map(function (b) { return b.i; })) + "\n";
@@ -222,6 +309,7 @@
       setStatus(stN, taN.value.trim() ? cc.level : "muted",
         taN.value.trim() ? "" : "введите цифровой код (по желанию)");
       setStatus(stX, cc.level, cc.msg);
+      renderLangScan();
     }
 
     [taW, taN].forEach(function (ta) {
@@ -229,6 +317,7 @@
       ta.addEventListener("input", run);
       ta.addEventListener("scroll", function () { sync(ta, hl); });
     });
+    if (tgPodbor) tgPodbor.addEventListener("change", renderLangScan);
     run();
   });
 })(typeof window !== "undefined" ? window : globalThis);

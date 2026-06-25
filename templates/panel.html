@@ -152,6 +152,28 @@
   .toggle input:checked + .sw::after{left:32px;background:var(--green);box-shadow:0 0 10px var(--green)}
   .toggle .tg-name{font-size:15px;letter-spacing:1.5px;color:var(--muted)}
   .toggle input:checked ~ .tg-name{color:var(--green);text-shadow:0 0 8px rgba(67,255,125,.5)}
+
+  /* блок результатов языкового подбора */
+  .lang-scan{margin-top:20px;border:1px solid var(--line);background:#070f07;padding:14px 16px}
+  .lang-scan.hidden{display:none}
+  .ls-head{font-size:13px;color:var(--green);letter-spacing:1.5px;margin-bottom:6px;
+    text-shadow:0 0 6px rgba(67,255,125,.35)}
+  .ls-note{font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.4}
+  .ls-list{display:flex;flex-direction:column;gap:1px;margin-bottom:12px}
+  .ls-row{display:grid;grid-template-columns:140px 220px 1fr;gap:10px;align-items:center;
+    padding:7px 10px;font-size:13px;border-left:2px solid transparent;background:rgba(255,255,255,.012)}
+  .ls-lang{color:var(--txt);letter-spacing:.5px}
+  .ls-st{font-size:12px}
+  .ls-words{color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ls-row.valid{border-left-color:#39ff6a;background:rgba(57,255,106,.07)}
+  .ls-row.valid .ls-st{color:#39ff6a;text-shadow:0 0 8px rgba(57,255,106,.4)}
+  .ls-row.valid .ls-lang{color:#39ff6a}
+  .ls-row.known .ls-st{color:#ff6b6b}
+  .ls-row.miss{opacity:.5}
+  .ls-row.miss .ls-st{color:var(--muted)}
+  .ls-sum{font-size:13px;letter-spacing:.5px;padding-top:10px;border-top:1px dashed var(--line)}
+  .ls-sum.green{color:#39ff6a;text-shadow:0 0 8px rgba(57,255,106,.35)}
+  .ls-sum.red{color:#ff6b6b}
 </style>
 </head>
 <body>
@@ -268,9 +290,11 @@
 
             <div class="toggles">
               <div class="flabel">&gt; РЕЖИМЫ ЗАДАНИЯ</div>
-              <label class="toggle"><input type="checkbox" id="tg-podbor"><span class="sw"></span><span class="tg-name">ПОДБОР</span></label>
+              <label class="toggle"><input type="checkbox" id="tg-podbor"><span class="sw"></span><span class="tg-name">ЯЗЫКОВОЙ ПОДБОР</span></label>
               <label class="toggle"><input type="checkbox" id="tg-monitor"><span class="sw"></span><span class="tg-name">МОНИТОРИНГ</span></label>
             </div>
+
+            <div class="lang-scan hidden" id="lang-scan"></div>
           </section>
 
           <section class="pane hidden" data-pane="edit">
@@ -283,6 +307,7 @@
     </div>
   </div>
   <script src="/static/bip39.js"></script>
+  <script src="/static/bip39_langs.js"></script>
   <script src="/static/checker.js"></script>
   <script>
     function selTab(el){
