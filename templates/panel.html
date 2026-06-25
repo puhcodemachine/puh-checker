@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ПУХ · Checker — панель</title>
+<style>
+  :root{--bg:#0a0e14;--card:#121925;--line:#1f2a3a;--txt:#e6edf3;--muted:#7d8da3;--accent:#3ddc97;--accent2:#27c4ff}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:'Inter',ui-sans-serif,system-ui,sans-serif;color:var(--txt);
+    background:radial-gradient(1000px 600px at 80% -10%,#14324a 0,transparent 55%),var(--bg);min-height:100dvh}
+  header{display:flex;align-items:center;justify-content:space-between;padding:16px 22px;
+    border-bottom:1px solid var(--line);background:rgba(10,14,20,.6);backdrop-filter:blur(8px)}
+  .brand{display:flex;align-items:center;gap:11px}
+  .logo{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;
+    background:linear-gradient(135deg,var(--accent),var(--accent2));color:#04110c;font-weight:800;
+    font-family:'JetBrains Mono',monospace}
+  .brand b{font-size:15px;letter-spacing:.5px}
+  .brand span{display:block;font-size:10px;color:var(--muted);letter-spacing:2px;text-transform:uppercase}
+  .who{display:flex;align-items:center;gap:14px;font-size:13px;color:var(--muted)}
+  .who a{color:var(--txt);text-decoration:none;border:1px solid var(--line);padding:7px 13px;border-radius:9px}
+  .who a:hover{border-color:var(--accent)}
+  main{padding:34px 22px;max-width:1100px;margin:0 auto}
+  h1{font-size:22px;margin:0 0 6px}
+  .lead{color:var(--muted);margin:0 0 28px;font-size:14px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}
+  .tile{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 18px 16px}
+  .tile .k{font-size:12px;color:var(--muted);letter-spacing:.3px}
+  .tile .v{font-size:26px;font-weight:700;margin-top:8px;font-family:'JetBrains Mono',monospace}
+  .tile .v.dim{color:var(--muted);font-size:15px;font-weight:500}
+  .badge{display:inline-block;margin-top:10px;font-size:11px;padding:3px 9px;border-radius:20px;
+    background:rgba(61,220,151,.12);color:var(--accent);border:1px solid rgba(61,220,151,.3)}
+  .soon{margin-top:30px;padding:16px 18px;border:1px dashed var(--line);border-radius:12px;
+    color:var(--muted);font-size:13.5px}
+</style>
+</head>
+<body>
+  <header>
+    <div class="brand"><div class="logo">П</div><div><b>ПУХ · CHECKER</b><span>seed recovery panel</span></div></div>
+    <div class="who">👤 {{USER}} <a href="/logout">Выйти</a></div>
+  </header>
+  <main>
+    <h1>Мониторинговая панель</h1>
+    <p class="lead">Здесь будет обзор восстановления: пути деривации, сети, балансы и активность кошельков.</p>
+    <div class="grid">
+      <div class="tile"><div class="k">Проверено путей</div><div class="v">0</div><div class="badge">готово к работе</div></div>
+      <div class="tile"><div class="k">Сетей в охвате</div><div class="v">0</div><div class="badge">BTC · ETH · TRX · SOL …</div></div>
+      <div class="tile"><div class="k">Кошельков с балансом</div><div class="v">0</div></div>
+      <div class="tile"><div class="k">Статус движка</div><div class="v dim">ожидание</div></div>
+    </div>
+    <div class="soon">⏳ Это заглушка панели (Шаг 1 — авторизация готова). Дальше подключаем сюда живой движок checker: ввод фразы → проверка всех путей и сетей → балансы.</div>
+  </main>
+</body>
+</html>

@@ -1,0 +1,9 @@
+# секреты — НИКОГДА не коммитим
+auth.json
+.gh_token
+*.log
+
+# python
+__pycache__/
+*.pyc
+.venv/
