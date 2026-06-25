@@ -53,7 +53,7 @@ def save_tasks(tasks):
 def task_summary(t):
     return {"id": t["id"], "name": t["name"], "type": t["type"], "status": t["status"],
             "modes": t["modes"], "created": t["created"], "started": t["started"],
-            "results": len(t.get("results", []))}
+            "stopped": t.get("stopped"), "results": len(t.get("results", []))}
 
 
 def verify(user, pw):
@@ -182,6 +182,19 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if not self._user():
                 return self._json({"error": "auth"}, 401)
             return self._create_task()
+        m = re.match(r"^/api/tasks/([0-9a-f]+)/stop$", path)
+        if m:
+            if not self._user():
+                return self._json({"error": "auth"}, 401)
+            with LOCK:
+                tasks = load_tasks()
+                for t in tasks:
+                    if t["id"] == m.group(1):
+                        t["status"] = "red"
+                        t["stopped"] = time.time()
+                        save_tasks(tasks)
+                        return self._json({"ok": True, "task": task_summary(t)})
+            return self._json({"error": "not found"}, 404)
         if path != "/login":
             return self.send_error(404)
         n = int(self.headers.get("Content-Length", 0))

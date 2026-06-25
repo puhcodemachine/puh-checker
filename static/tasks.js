@@ -12,17 +12,23 @@
   function statusInfo(s) {
     if (s === "green") return { lamp: "green", cls: "green", txt: "● РАБОТАЕТ" };
     if (s === "amber") return { lamp: "amber", cls: "amber", txt: "◐ НУЖНА ПРОВЕРКА" };
-    return { lamp: "red", cls: "red", txt: "✕ ОШИБКА" };
+    return { lamp: "red", cls: "red", txt: "■ ОСТАНОВЛЕНО" };
+  }
+
+  function runSpan(t, cls) {
+    if (t.status === "green")
+      return '<span class="' + cls + ' t-run" data-started="' + t.started + '">' + dur(Date.now() / 1000 - t.started) + "</span>";
+    return '<span class="' + cls + ' t-run">' + (t.stopped ? dur(t.stopped - t.started) : "--:--:--") + "</span>";
   }
 
   function cardHtml(t) {
-    var si = statusInfo(t.status), running = t.status === "green";
-    return '<div class="task" data-id="' + t.id + '" data-started="' + t.started + '" onclick="openTask(\'' + t.id + '\')">' +
+    var si = statusInfo(t.status);
+    return '<div class="task" data-id="' + t.id + '" onclick="openTask(\'' + t.id + '\')">' +
       '<div class="task-top"><span class="task-name">' + esc(t.name) + '</span><span class="lamp ' + si.lamp + '"></span></div>' +
       '<div class="task-status ' + si.cls + '">' + si.txt + '</div>' +
       '<div class="task-type">тип: ' + esc(t.type) + '</div>' +
       '<div class="task-meta"><span>ЗАПУСК<span class="v">' + clock(t.started) + '</span></span>' +
-      '<span style="text-align:right">В РАБОТЕ<span class="v t-run">' + (running ? dur(Date.now() / 1000 - t.started) : "--:--:--") + '</span></span></div>' +
+      '<span style="text-align:right">В РАБОТЕ' + runSpan(t, "v") + '</span></div>' +
       '</div>';
   }
 
@@ -53,8 +59,7 @@
       '<span class="k">СТАТУС</span><span class="val ' + si.cls + '">' + si.txt + "</span>" +
       '<span class="k">ТИП</span><span class="val">' + esc(t.type) + "</span>" +
       '<span class="k">ЗАПУСК</span><span class="val">' + fmtDateTime(t.started) + "</span>" +
-      '<span class="k">ОБЩЕЕ ВРЕМЯ В РАБОТЕ</span><span class="val t-run" data-started="' + t.started + '">' +
-        (t.status === "green" ? dur(Date.now() / 1000 - t.started) : "--:--:--") + "</span>" +
+      '<span class="k">ОБЩЕЕ ВРЕМЯ В РАБОТЕ</span>' + runSpan(t, "val") +
       "</div></div>";
 
     h += '<div class="td-sec"><div class="td-h">МАТЕРИАЛ ЗАДАНИЯ</div>';
@@ -78,6 +83,33 @@
     h += "</div>";
 
     $("td-inner").innerHTML = h;
+
+    var stop = $("td-stop");
+    if (stop) {
+      if (t.status === "green") { stop.classList.remove("hidden"); stop.onclick = function () { confirmStop(t.id, t.name); }; }
+      else { stop.classList.add("hidden"); stop.onclick = null; }
+    }
+  }
+
+  function confirmModal(title, text, okText, onOk) {
+    $("modal-title").textContent = title;
+    $("modal-text").textContent = text;
+    $("modal-ok").textContent = okText || "Подтвердить";
+    $("modal").classList.remove("hidden");
+    $("modal-ok").onclick = function () { $("modal").classList.add("hidden"); onOk(); };
+    $("modal-cancel").onclick = function () { $("modal").classList.add("hidden"); };
+  }
+
+  function confirmStop(id, name) {
+    confirmModal("Остановить задание?",
+      "Задание " + name + " будет переведено в статус ОСТАНОВЛЕНО (красный). Перебор прекратится.",
+      "Да, остановить", function () {
+        fetch("/api/tasks/" + id + "/stop", { method: "POST" }).then(function (r) { return r.json(); })
+          .then(function (d) {
+            if (d.ok) { flash("задание " + name + " остановлено"); window.openTask(id); refresh(); }
+            else flash("не удалось остановить");
+          }).catch(function () { flash("сеть недоступна"); });
+      });
   }
 
   window.openTask = function (id) {
