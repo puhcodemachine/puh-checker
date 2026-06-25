@@ -38,7 +38,57 @@
   }
   window.refreshTasks = refresh;
   window.renderTasksDirect = render;  // для офлайн-предпросмотра
-  window.openTask = function () { /* раскрытие задания на всю страницу — следующий шаг */ };
+
+  function fmtDateTime(ts) {
+    var d = new Date(ts * 1000);
+    return pad(d.getDate()) + "." + pad(d.getMonth() + 1) + "." + d.getFullYear() + "  " + clock(ts);
+  }
+
+  function renderDetail(t) {
+    var si = statusInfo(t.status), m = t.modes || {}, res = t.results || [];
+    $("td-name").textContent = t.name;
+    $("td-lamp").className = "lamp " + si.lamp;
+    var h = "";
+    h += '<div class="td-sec"><div class="td-h">СТАТУС И ВРЕМЯ</div><div class="td-grid">' +
+      '<span class="k">СТАТУС</span><span class="val ' + si.cls + '">' + si.txt + "</span>" +
+      '<span class="k">ТИП</span><span class="val">' + esc(t.type) + "</span>" +
+      '<span class="k">ЗАПУСК</span><span class="val">' + fmtDateTime(t.started) + "</span>" +
+      '<span class="k">ОБЩЕЕ ВРЕМЯ В РАБОТЕ</span><span class="val t-run" data-started="' + t.started + '">' +
+        (t.status === "green" ? dur(Date.now() / 1000 - t.started) : "--:--:--") + "</span>" +
+      "</div></div>";
+
+    h += '<div class="td-sec"><div class="td-h">МАТЕРИАЛ ЗАДАНИЯ</div>';
+    if (t.words) h += '<div class="td-k">СЛОВА</div><div class="td-mat">' + esc(t.words) + "</div>";
+    if (t.nums) h += '<div class="td-k" style="margin-top:10px">ЦИФРОВОЙ КОД</div><div class="td-mat">' + esc(t.nums) + "</div>";
+    h += "</div>";
+
+    h += '<div class="td-sec"><div class="td-h">РЕЖИМЫ РАБОТЫ</div><div class="td-chips">' +
+      '<span class="td-chip ' + (m.podbor ? "on" : "") + '">ПОДБОР · ' + (m.podbor ? "ВКЛ" : "выкл") + "</span>" +
+      '<span class="td-chip ' + (m.monitor ? "on" : "") + '">МОНИТОРИНГ · ' + (m.monitor ? "ВКЛ" : "выкл") + "</span>" +
+      "</div></div>";
+
+    h += '<div class="td-sec"><div class="td-h">РЕЗУЛЬТАТЫ (' + res.length + ")</div>";
+    if (res.length) {
+      h += res.map(function (r) {
+        return '<div class="td-res-row"><span class="ts">' + fmtDateTime(r.ts) + "</span><span>" + esc(r.phrase) + "</span></div>";
+      }).join("");
+    } else {
+      h += '<div class="td-empty">результатов пока нет — движок перебора ещё не запущен (следующий шаг)</div>';
+    }
+    h += "</div>";
+
+    $("td-inner").innerHTML = h;
+  }
+
+  window.openTask = function (id) {
+    fetch("/api/tasks/" + id).then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.task) { renderDetail(d.task); $("task-detail").classList.remove("hidden"); }
+        else flash("задание не найдено");
+      }).catch(function () { flash("сеть недоступна"); });
+  };
+  window.closeTask = function () { $("task-detail").classList.add("hidden"); };
+  window.openDetailDirect = function (t) { renderDetail(t); $("task-detail").classList.remove("hidden"); };  // офлайн-предпросмотр
 
   function goHome() {
     document.querySelectorAll(".tab").forEach(function (t) { t.classList.remove("active"); });
@@ -55,10 +105,10 @@
 
   // живой счётчик «В РАБОТЕ»
   setInterval(function () {
-    document.querySelectorAll(".task[data-started]").forEach(function (el) {
-      var run = el.querySelector(".t-run");
-      if (run && run.textContent !== "--:--:--")
-        run.textContent = dur(Date.now() / 1000 - parseFloat(el.getAttribute("data-started")));
+    document.querySelectorAll(".t-run").forEach(function (run) {
+      var host = run.closest("[data-started]");
+      if (host && run.textContent !== "--:--:--")
+        run.textContent = dur(Date.now() / 1000 - parseFloat(host.getAttribute("data-started")));
     });
   }, 1000);
 

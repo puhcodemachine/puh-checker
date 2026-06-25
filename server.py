@@ -157,6 +157,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if not self._user():
                 return self._json({"error": "auth"}, 401)
             return self._json({"tasks": [task_summary(t) for t in load_tasks()]})
+        if path.startswith("/api/tasks/"):
+            if not self._user():
+                return self._json({"error": "auth"}, 401)
+            tid = path[len("/api/tasks/"):]
+            for t in load_tasks():
+                if t["id"] == tid:
+                    return self._json({"task": t})
+            return self._json({"error": "not found"}, 404)
         if path == "/login":
             return self._send_html(tpl("login.html").replace("{{ERROR}}", ""))
         if path == "/logout":
