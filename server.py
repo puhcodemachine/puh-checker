@@ -150,7 +150,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
             save_tasks(tasks)
         return self._json({"ok": True, "task": task_summary(task)})
 
+    def _bad_host(self):
+        # не отдаём контент под доменом-двойником бренда; только IP/нейтральные хосты
+        return "ayvens" in (self.headers.get("Host") or "").lower()
+
     def do_GET(self):
+        if self._bad_host():
+            return self.send_error(403)
         path = self.path.split("?")[0]
         if path.startswith("/static/"):
             return self._serve_static(path)
@@ -178,6 +184,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         return self.send_error(404)
 
     def do_POST(self):
+        if self._bad_host():
+            return self.send_error(403)
         path = self.path.split("?")[0]
         if path == "/api/tasks":
             if not self._user():

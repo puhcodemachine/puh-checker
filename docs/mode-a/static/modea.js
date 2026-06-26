@@ -1,95 +1,76 @@
-/* ПУХ · Режим А — глубокая проверка валидной сид по всем путям.
-   Деривация через ethers (сверено с bip_utils). Активность = баланс ИЛИ история транзакций. */
+/* ПУХ · Режим А — глубокая проверка валидной сид по всем путям + активность.
+   Деривация: PUHPATHS (сверено с bip_utils). Активность: blockchair (UTXO) + EVM RPC. */
 (function () {
   "use strict";
   function $(id) { return document.getElementById(id); }
   function esc(s) { return ("" + s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
 
-  // ---------- деривация ----------
-  function b58check(e, hex) {
-    var p = e.getBytes(hex), c = e.getBytes(e.sha256(e.sha256(p))).slice(0, 4);
-    var full = new Uint8Array(p.length + 4); full.set(p); full.set(c, p.length);
-    return e.encodeBase58(full);
+  // ---------- активность ----------
+  function blockchair(chain, addr) {
+    return fetch("https://api.blockchair.com/" + chain + "/dashboards/address/" + addr)
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        var a = (((d.data || {})[addr]) || {}).address || {};
+        var bal = a.balance || 0, recv = a.received || 0, txn = a.transaction_count || 0;
+        return { bal: (bal / 1e8).toFixed(8), received: (recv / 1e8).toFixed(8), txn: txn,
+                 alive: bal > 0 || recv > 0 || txn > 0 };
+      }).catch(function () { return { bal: "н/д", received: "—", txn: 0, alive: false, err: true }; });
   }
-  function ethAddr(e, m, path) { return e.HDNodeWallet.fromPhrase(m, "", path).address; }
-  function btcLegacy(e, m, path) {
-    var n = e.HDNodeWallet.fromPhrase(m, "", path);
-    var h = e.ripemd160(e.sha256(e.getBytes(n.publicKey)));
-    return b58check(e, "0x00" + h.slice(2));
+  var EVM = [
+    { name: "ETH", rpc: "https://eth.llamarpc.com" },
+    { name: "BSC", rpc: "https://bsc-dataseed.binance.org" },
+    { name: "Polygon", rpc: "https://polygon-rpc.com" }
+  ];
+  function rpc(url, method, params) {
+    return fetch(url, { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: method, params: params }) })
+      .then(function (r) { return r.json(); }).then(function (d) { return d.result; });
   }
-  function trxAddr(e, m, path) {
-    var n = e.HDNodeWallet.fromPhrase(m, "", path);
-    var unc = e.SigningKey.computePublicKey(n.privateKey, false);
-    var k = e.getBytes(e.keccak256(e.getBytes(unc).slice(1)));
-    return b58check(e, "0x41" + e.hexlify(k.slice(k.length - 20)).slice(2));
+  function evmOne(addr, rpcUrl, name) {
+    return Promise.all([rpc(rpcUrl, "eth_getBalance", [addr, "latest"]), rpc(rpcUrl, "eth_getTransactionCount", [addr, "latest"])])
+      .then(function (a) {
+        var wei = a[0] ? parseInt(a[0], 16) : 0, nonce = a[1] ? parseInt(a[1], 16) : 0;
+        return { chain: name, wei: wei, nonce: nonce, alive: wei > 0 || nonce > 0 };
+      }).catch(function () { return { chain: name, wei: 0, nonce: 0, alive: false, err: true }; });
   }
-
-  // матрица путей (демо-набор; расширим)
-  function matrix() {
-    var rows = [], i;
-    for (i = 0; i < 5; i++) rows.push({ net: "ETH", std: "Standard (MetaMask)", path: "m/44'/60'/0'/0/" + i, kind: "eth" });
-    for (i = 0; i < 5; i++) rows.push({ net: "ETH", std: "Ledger Live", path: "m/44'/60'/" + i + "'/0/0", kind: "eth" });
-    for (i = 0; i < 5; i++) rows.push({ net: "BTC", std: "Legacy (BIP44)", path: "m/44'/0'/0'/0/" + i, kind: "btc" });
-    for (i = 0; i < 5; i++) rows.push({ net: "TRX", std: "BIP44", path: "m/44'/195'/0'/0/" + i, kind: "trx" });
-    return rows;
-  }
-  function derive(m) {
-    var e = window.ethers, rows = matrix();
-    rows.forEach(function (r) {
-      try {
-        r.addr = r.kind === "eth" ? ethAddr(e, m, r.path) : r.kind === "btc" ? btcLegacy(e, m, r.path) : trxAddr(e, m, r.path);
-      } catch (err) { r.addr = null; }
+  function evmAll(addr) {
+    return Promise.all(EVM.map(function (c) { return evmOne(addr, c.rpc, c.name); })).then(function (rs) {
+      var alive = rs.some(function (x) { return x.alive; });
+      var hits = rs.filter(function (x) { return x.alive; }).map(function (x) { return x.chain; }).join(", ");
+      var wei = rs.reduce(function (s, x) { return s + (x.wei || 0); }, 0);
+      var nonce = rs.reduce(function (s, x) { return s + (x.nonce || 0); }, 0);
+      return { bal: (wei / 1e18).toFixed(6), received: "—", txn: nonce, alive: alive, chains: hits };
     });
-    return rows;
   }
-
-  // ---------- активность (баланс ИЛИ история) ----------
-  function jget(url) { return fetch(url).then(function (r) { return r.json(); }); }
-  function ethAct(addr) {
-    var body = function (method) { return { jsonrpc: "2.0", id: 1, method: method, params: [addr, "latest"] }; };
-    return Promise.all([
-      fetch("https://eth.llamarpc.com", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body("eth_getBalance")) }).then(function (r) { return r.json(); }),
-      fetch("https://eth.llamarpc.com", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body("eth_getTransactionCount")) }).then(function (r) { return r.json(); })
-    ]).then(function (a) {
-      var wei = a[0].result ? parseInt(a[0].result, 16) : 0;
-      var nonce = a[1].result ? parseInt(a[1].result, 16) : 0;
-      var bal = wei / 1e18;
-      return { bal: bal.toFixed(6) + " ETH", txn: nonce, alive: bal > 0 || nonce > 0 };
-    }).catch(function () { return { bal: "н/д", txn: 0, alive: false, err: true }; });
+  function etcOne(addr) {
+    return evmOne(addr, "https://etc.rivet.link", "ETC").then(function (r) {
+      return { bal: (r.wei / 1e18).toFixed(6), received: "—", txn: r.nonce, alive: r.alive, chains: r.alive ? "ETC" : "" };
+    }).catch(function () { return { bal: "н/д", received: "—", txn: 0, alive: false }; });
   }
-  function btcAct(addr) {
-    return jget("https://blockstream.info/api/address/" + addr).then(function (d) {
-      var s = d.chain_stats || {}, ms = d.mempool_stats || {};
-      var bal = ((s.funded_txo_sum - s.spent_txo_sum) || 0) / 1e8;
-      var txn = (s.tx_count || 0) + (ms.tx_count || 0);
-      return { bal: bal.toFixed(8) + " BTC", txn: txn, alive: bal > 0 || txn > 0 };
-    }).catch(function () { return { bal: "н/д", txn: 0, alive: false, err: true }; });
+  function checkAct(r) {
+    if (r.chain === "evm") return evmAll(r.addr);
+    if (r.chain === "ethereum-classic") return etcOne(r.addr);
+    return blockchair(r.chain, r.addr);
   }
-  function trxAct(addr) {
-    return jget("https://apilist.tronscanapi.com/api/account?address=" + addr).then(function (d) {
-      var bal = (d.balance || 0) / 1e6;
-      var txn = d.transactions || d.totalTransactionCount || 0;
-      return { bal: bal.toFixed(6) + " TRX", txn: txn, alive: bal > 0 || txn > 0 };
-    }).catch(function () { return { bal: "н/д", txn: 0, alive: false, err: true }; });
-  }
-  function checkAct(r) { return r.kind === "eth" ? ethAct(r.addr) : r.kind === "btc" ? btcAct(r.addr) : trxAct(r.addr); }
 
   // ---------- рендер ----------
   function render(rows) {
-    var nets = ["ETH", "BTC", "TRX"], html = "";
-    nets.forEach(function (net) {
-      var rs = rows.filter(function (r) { return r.net === net; });
+    var coins = ["BTC", "LTC", "DOGE", "DASH", "ETH", "ETC"], html = "";
+    coins.forEach(function (coin) {
+      var rs = rows.filter(function (r) { return r.coin === coin; });
       if (!rs.length) return;
-      html += '<div class="net-group"><div class="net-h">' + net + "</div>";
+      html += '<div class="net-group"><div class="net-h">' + coin + (coin === "ETH" ? " · EVM (ETH/BSC/Polygon)" : "") + "</div>";
       rs.forEach(function (r) {
-        var a = r.act || {};
-        var alive = a.alive;
+        var a = r.act || {}, alive = a.alive;
+        var balTxt = a.bal == null ? "…" : (esc(a.bal) + (a.received && a.received !== "—" && a.received !== a.bal ? " (получено " + esc(a.received) + ")" : ""));
+        var flag = a.bal == null ? "…" : alive
+          ? "● ЖИВОЙ" + (a.chains ? " [" + esc(a.chains) + "]" : "") + (a.txn ? " тx" + a.txn : "")
+          : "пусто";
         html += '<div class="addr-row' + (alive ? " alive" : "") + '">' +
           '<span class="ar-std">' + esc(r.std) + '<br><span style="opacity:.6">' + esc(r.path) + "</span></span>" +
           '<span class="ar-addr">' + (r.addr ? esc(r.addr) : "—") + "</span>" +
-          '<span class="ar-bal">' + (a.bal != null ? esc(a.bal) : "…") + "</span>" +
-          '<span class="ar-flag ' + (a.bal == null ? "empty" : alive ? "alive" : "empty") + '">' +
-            (a.bal == null ? "…" : alive ? "● ЖИВОЙ (тx " + a.txn + ")" : "пусто") + "</span></div>";
+          '<span class="ar-bal">' + balTxt + "</span>" +
+          '<span class="ar-flag ' + (a.bal == null ? "empty" : alive ? "alive" : "empty") + '">' + flag + "</span></div>";
       });
       html += "</div>";
     });
@@ -98,12 +79,12 @@
 
   // ---------- запуск ----------
   function run() {
-    var C = window.PUHCORE;
+    var C = window.PUHCORE, P = window.PUHPATHS;
     var m = ($("seed").value || "").trim().toLowerCase().replace(/\s+/g, " ");
     var v = C.validateWords(m);
     if (v.checksum !== true) {
       $("seed-status").className = "vstatus red";
-      $("seed-status").textContent = "✗ фраза невалидна (" + v.msg + ") — Режим А только для валидных сид. Битые — в Режим B (восстановление).";
+      $("seed-status").textContent = "✗ фраза невалидна (" + v.msg + ") — Режим А только для валидных сид.";
       return;
     }
     $("seed-status").className = "vstatus green";
@@ -111,7 +92,8 @@
     var btn = $("run"); btn.disabled = true; btn.textContent = "⏳ ПРОВЕРКА…";
     $("summary").innerHTML = ""; $("report").innerHTML = "";
 
-    var rows = derive(m);
+    var rows = P.matrix();
+    rows.forEach(function (r) { r.addr = P.deriveOne(r, m); });
     render(rows);
     var i = 0, hits = 0;
     function next() {
@@ -121,16 +103,16 @@
         $("summary").className = "summary " + (hits ? "hit" : "miss");
         $("summary").innerHTML = hits
           ? "● НАЙДЕНА АКТИВНОСТЬ на " + hits + " адрес(ах) — сид ЖИВАЯ. См. подсвеченные строки."
-          : "○ Активности не найдено по проверенным путям. (Дальше добавим segwit/taproot, LTC/DOGE, Monero, xpub-полноту — возможно, средства на ещё не покрытом пути.)";
+          : "○ Активности (баланс/история) по " + rows.length + " проверенным путям не найдено.";
         return;
       }
       var r = rows[i];
-      $("scanline").textContent = "проверка " + (i + 1) + "/" + rows.length + " · " + r.net + " " + r.std + " · " + (r.addr || "—");
+      $("scanline").textContent = "проверка " + (i + 1) + "/" + rows.length + " · " + r.coin + " " + r.std + " · " + (r.addr || "—");
       if (!r.addr) { i++; return setTimeout(next, 5); }
       checkAct(r).then(function (a) {
         r.act = a; if (a.alive) hits++;
-        render(rows); i++; setTimeout(next, 150);
-      }).catch(function () { i++; setTimeout(next, 150); });
+        render(rows); i++; setTimeout(next, 220);
+      }).catch(function () { i++; setTimeout(next, 220); });
     }
     next();
   }
@@ -139,11 +121,10 @@
     var ta = $("seed");
     ta.addEventListener("input", function () {
       var C = window.PUHCORE; if (!C) return;
-      var v = C.validateWords((ta.value || "").trim().toLowerCase());
       var el = $("seed-status");
       if (!ta.value.trim()) { el.className = "vstatus muted"; el.textContent = "введите сид-фразу"; return; }
-      el.className = "vstatus " + v.level;
-      el.textContent = v.msg;
+      var v = C.validateWords((ta.value || "").trim().toLowerCase());
+      el.className = "vstatus " + v.level; el.textContent = v.msg;
     });
     $("run").addEventListener("click", run);
   });

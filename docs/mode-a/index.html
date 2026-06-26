@@ -63,7 +63,7 @@
     </div>
 
     <h1>&gt; ГЛУБОКАЯ ПРОВЕРКА · все пути развёртывания</h1>
-    <p class="lead">Вставь <b>валидную</b> сид-фразу. Я выведу адреса по всем известным путям (ETH стандарт и Ledger Live, BTC, TRON) и проверю каждый на активность — баланс или историю транзакций. Любая пыль = адрес живой.</p>
+    <p class="lead">Вставь <b>валидную</b> сид-фразу. Я выведу адреса по всем известным путям — <b>BTC</b> (Legacy/P2SH-SegWit/SegWit), <b>LTC</b> (3 формата), <b>DOGE</b>, <b>DASH</b>, <b>ETH</b> (Standard + Ledger Live, проверка на ETH/BSC/Polygon), <b>ETC</b> — и проверю каждый на активность: баланс, <b>историю</b> и <b>когда-либо полученные средства</b>. Любой след = адрес живой. Все адреса сверены с bip_utils.</p>
 
     <div class="flabel">&gt; СИД-ФРАЗА</div>
     <textarea id="seed" spellcheck="false" autocomplete="off" placeholder="вставь 12–24 слова через пробел…"></textarea>
@@ -74,11 +74,12 @@
     <div id="summary"></div>
     <div id="report"></div>
 
-    <div class="note">⚠️ Демо: проверяются ETH (стандарт + Ledger Live), BTC (legacy), TRON — первые адреса каждого пути. Балансы/история через публичные API (best-effort). Дальше добавим BTC segwit/taproot, LTC/DOGE, Monero и проверку на уровне аккаунта (xpub) для полноты.</div>
+    <div class="note">Проверяется: BTC (Legacy/P2SH/SegWit ×5), LTC (3 формата ×3), DOGE, DASH, ETH (Standard+Ledger ×5, на ETH/BSC/Polygon), ETC — первые адреса каждого пути (~45 адресов). Активность через публичные API (blockchair для UTXO — поле «получено когда-либо», RPC для EVM); best-effort, возможны лимиты. <b>TODO:</b> BTC Taproot (BIP86), BCH (cashaddr), Monero, проверка на уровне аккаунта (xpub) для полного покрытия индексов, passphrase (25-е слово).</div>
   </div>
   <script src="static/bip39.js"></script>
   <script src="static/checker.js"></script>
   <script src="static/ethers.umd.min.js"></script>
+  <script src="static/paths.js"></script>
   <script src="static/modea.js"></script>
 
 <div id="gate" style="position:fixed;inset:0;z-index:9999;background:#050805;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:13px;font-family:'Share Tech Mono',monospace;color:#32c266">
