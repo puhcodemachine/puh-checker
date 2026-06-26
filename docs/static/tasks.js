@@ -93,13 +93,13 @@
     // dedup по фразе
     var seen = {}, uniq = [];
     res.forEach(function (r) { if (r.phrase && !seen[r.phrase]) { seen[r.phrase] = 1; uniq.push(r); } });
-    log.push({ ts: nowSec(), msg: uniq.length
-      ? "ИТОГ: найдено валидных фраз: " + uniq.length + " → ПАУЗА, требуется проверка (жёлтый сигнал)"
-      : "ИТОГ: на 1-м уровне совпадений нет — нужен более глубокий перебор (2+ ошибки)" });
-    var patch = { results: uniq, log: log, done: true };
-    if (uniq.length) { patch.status = "amber"; patch.pausedAt = nowSec(); }  // пауза + заморозка таймера
-    else { patch.status = "green"; }
-    return store.update(taskId, patch).then(function () { refresh(); });
+    log.push({ ts: nowSec(), msg: "найдено валидных фраз: " + uniq.length + " → проверяю балансы каждой сид…" });
+    // задание остаётся «в работе» (таймер тикает), пока идёт скан балансов; потом ПАУЗА с фиксацией времени
+    return store.update(taskId, { status: "green", results: uniq, log: log, done: true, balScanned: false })
+      .then(function () {
+        refresh();
+        store.get(taskId).then(function (ft) { if (ft) scanResults(ft, true); });
+      });
   }
   window.runPereborDemo = runPerebor;
 
@@ -127,6 +127,12 @@
   function render(tasks) {
     var list = $("task-list"), cnt = $("task-count");
     if (cnt) cnt.textContent = "[ " + tasks.length + " ]";
+    tasks.forEach(function (t) {
+      if (t.status !== "green" && !t.pausedAt && !t.stopped) {  // миграция: зафиксировать время старым паузам
+        t.pausedAt = Date.now() / 1000;
+        store.update(t.id, { pausedAt: t.pausedAt });
+      }
+    });
     if (list) list.innerHTML = tasks.length ? tasks.map(cardHtml).join("") : EMPTY;
   }
   function refresh() { store.list().then(render); }
@@ -171,7 +177,7 @@
       if (t.status === "green") { stop.classList.remove("hidden"); stop.onclick = function () { confirmStop(t.id, t.name); }; }
       else { stop.classList.add("hidden"); stop.onclick = null; }
     }
-    scanResults(t);  // фоновый скан балансов + подсветка непустых
+    if (t.status === "amber" && !t.balScanned) scanResults(t, false);  // дозаписать балансы у старых заданий
   }
 
   function confirmModal(title, text, okText, onOk) {
@@ -193,15 +199,17 @@
       });
   }
 
+  var curOpen = null;  // id открытого задания (для живого скана)
   window.openTask = function (id) {
+    curOpen = id;
     store.get(id).then(function (t) {
       if (t) { renderDetail(t); $("task-detail").classList.remove("hidden"); }
       else flash("задание не найдено");
     });
   };
-  window.closeTask = function () { $("task-detail").classList.add("hidden"); };
+  window.closeTask = function () { curOpen = null; $("task-detail").classList.add("hidden"); };
   window.openDetailDirect = function (t) { renderDetail(t); $("task-detail").classList.remove("hidden"); };
-  window.goHomePanel = function () { $("task-detail").classList.add("hidden"); goHome(); };  // лого -> главная (дефолт)
+  window.goHomePanel = function () { curOpen = null; $("task-detail").classList.add("hidden"); goHome(); };  // лого -> главная (дефолт)
 
   // ---------- раскрытие сид: адреса ETH/TRC20/BTC/Monero + балансы + копирование ----------
   function resultHtml(r, i) {
@@ -262,19 +270,30 @@
     if (ph && !ph.querySelector(".fund-badge"))
       ph.innerHTML = '<span class="fund-badge">💰 ЕСТЬ СРЕДСТВА</span> ' + ph.innerHTML;
   }
-  function scanResults(t) {
-    if (!t || !t.results || !t.results.length || t.balScanned) return;
-    var D = window.PUHDERIVE; if (!D) return;
-    var ss = $("scan-status"), i = 0, total = t.results.length, found = 0;
+  function uiStatus(id, txt) { var ss = $("scan-status"); if (ss && curOpen === id) ss.textContent = txt; }
+  function finishPause(t, found) {
+    var log = t.log || [];
+    log.push({ ts: nowSec(), msg: "проверка балансов завершена" + (found ? (", СРЕДСТВА: " + found) : ", пусто") + " → ПАУЗА" });
+    store.update(t.id, { status: "amber", pausedAt: nowSec(), log: log, balScanned: true })
+      .then(function () { refresh(); if (curOpen === t.id) window.openTask(t.id); });
+  }
+  // скан балансов всех результатов; andPause=true → по завершении ставит задание на ПАУЗУ
+  function scanResults(t, andPause) {
+    if (!t) return;
+    var D = window.PUHDERIVE, results = t.results || [];
+    if (!D || !results.length) { if (andPause) finishPause(t, 0); return; }
+    if (t.balScanned && !andPause) return;
+    var i = 0, found = 0;
     function next() {
-      if (i >= total) {
+      if (i >= results.length) {
         t.balScanned = true;
-        if (ss) ss.textContent = "· балансы проверены" + (found ? (" — СРЕДСТВА: " + found) : " — пусто");
-        store.update(t.id, { results: t.results, balScanned: true });
+        uiStatus(t.id, "· балансы проверены" + (found ? (" — СРЕДСТВА: " + found) : " — пусто"));
+        store.update(t.id, { results: results, balScanned: true });
+        if (andPause) finishPause(t, found);
         return;
       }
-      if (ss) ss.textContent = "· проверка балансов " + (i + 1) + "/" + total + "…";
-      var r = t.results[i], a = D.addresses(r.phrase);
+      uiStatus(t.id, "· проверка балансов " + (i + 1) + "/" + results.length + "…");
+      var r = results[i], a = D.addresses(r.phrase);
       if (!a) { i++; return setTimeout(next, 10); }
       Promise.all([
         a.eth ? D.ethBalance(a.eth) : Promise.resolve("—"),
@@ -283,9 +302,9 @@
       ]).then(function (b) {
         r.bal = { eth: b[0], btc: b[1], trx: b[2] };
         r.funded = bnum(b[0]) > 0 || bnum(b[1]) > 0 || bnum(b[2]) > 0;
-        if (r.funded) { found++; markFunded(i); flash("💰 найдены средства — результат #" + (i + 1)); }
-        i++; setTimeout(next, 200);
-      }).catch(function () { i++; setTimeout(next, 200); });
+        if (r.funded) { found++; if (curOpen === t.id) markFunded(i); flash("💰 найдены средства — результат #" + (i + 1)); }
+        i++; setTimeout(next, 150);
+      }).catch(function () { i++; setTimeout(next, 150); });
     }
     next();
   }
