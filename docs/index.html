@@ -396,5 +396,31 @@
       });
     }
   </script>
+
+<div id="gate" style="position:fixed;inset:0;z-index:9999;background:#050805;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:13px;font-family:'Share Tech Mono',monospace;color:#32c266">
+  <div style="font-size:18px;letter-spacing:3px;text-shadow:0 0 8px rgba(34,160,86,.4)">ПУХ · ROBCO TERMLINK</div>
+  <div style="font-size:12px;color:#386b49;letter-spacing:1px">требуется авторизация</div>
+  <input id="gate-pw" type="password" placeholder="пароль" autofocus autocomplete="off"
+    style="margin-top:8px;padding:12px 14px;background:#0a110b;border:1px solid #143f24;color:#6fbe87;font-family:inherit;font-size:15px;outline:none;width:260px;text-align:center">
+  <button id="gate-go" style="padding:11px 28px;background:#32c266;color:#04130a;border:0;font-family:inherit;font-weight:700;letter-spacing:2px;cursor:pointer">ВОЙТИ</button>
+  <div id="gate-err" style="color:#e85a5a;font-size:12px;min-height:14px"></div>
+  <div style="position:fixed;bottom:14px;font-size:10px;color:#2a4f37;letter-spacing:1px">статичный превью · защита-барьер (не серверная)</div>
+</div>
+<script>
+(function(){
+  var HASH="be3ebb0bf33a4778734e6e189f11989f24e502d5abbf789e213907add6086602";
+  var g=document.getElementById("gate");
+  function open(){ g.style.display="none"; }
+  if(sessionStorage.getItem("puh_gate")==="1"){ open(); return; }
+  function check(){
+    var pw=document.getElementById("gate-pw").value;
+    var h=[].map.call(window.PUHCORE.sha256(new TextEncoder().encode(pw)),function(b){return("0"+b.toString(16)).slice(-2);}).join("");
+    if(h===HASH){ sessionStorage.setItem("puh_gate","1"); open(); }
+    else { document.getElementById("gate-err").textContent="неверный пароль"; document.getElementById("gate-pw").value=""; }
+  }
+  document.getElementById("gate-go").onclick=check;
+  document.getElementById("gate-pw").addEventListener("keydown",function(e){ if(e.key==="Enter") check(); });
+})();
+</script>
 </body>
 </html>
