@@ -53,6 +53,29 @@
   .ar-flag.alive{color:#3fcf72;font-weight:700}
   .ar-flag.empty{color:var(--muted)}
   .note{margin-top:24px;color:var(--muted);font-size:11px;line-height:1.6;border-top:1px dashed var(--line);padding-top:12px}
+  .ma-input{width:100%;background:#070f07;border:1px solid var(--line);color:var(--txt);font-family:inherit;
+    font-size:15px;padding:11px 13px;outline:none}
+  .ma-input:focus{border-color:var(--green)}
+  .close-task{padding:12px 22px;border:1px solid var(--line);background:transparent;color:var(--muted);
+    font-family:inherit;font-size:13px;letter-spacing:1px;cursor:pointer}
+  .close-task:hover{border-color:var(--green);color:var(--green)}
+  .close-task.hidden,.tasks-wrap.hidden,.alert.hidden{display:none}
+  .alert{margin-bottom:16px;padding:12px 16px;border:1px solid var(--amber);background:rgba(232,183,58,.1);
+    color:var(--amber);font-size:14px;letter-spacing:.3px}
+  .tasks-wrap{margin-bottom:22px;padding-bottom:18px;border-bottom:1px dashed var(--line)}
+  .ma-task-list{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+  .ma-task-row{display:grid;grid-template-columns:14px 1fr auto auto 20px;gap:14px;align-items:center;
+    padding:11px 14px;border:1px solid var(--line);background:var(--panel);cursor:pointer;transition:.12s}
+  .ma-task-row:hover{border-color:var(--green);box-shadow:0 0 12px rgba(34,160,86,.12)}
+  .ma-task-row.changed{border-color:var(--amber);background:rgba(232,183,58,.07)}
+  .ma-task-row.hit{border-left:3px solid #3fcf72}
+  .mt-dot{width:11px;height:11px;border-radius:50%;background:var(--muted)}
+  .mt-dot.hit{background:#3fcf72;box-shadow:0 0 8px #3fcf72}
+  .mt-dot.changed{background:var(--amber);box-shadow:0 0 8px var(--amber)}
+  .mt-name{color:var(--green);font-size:15px;letter-spacing:.5px}
+  .mt-meta{color:var(--muted);font-size:11px}
+  .mt-when{color:var(--muted);font-size:11px}
+  .mt-caret{color:var(--green);text-align:center}
 </style>
 </head>
 <body>
@@ -62,13 +85,25 @@
       <a href="../">← к панели</a>
     </div>
 
-    <h1>&gt; ГЛУБОКАЯ ПРОВЕРКА · все пути развёртывания</h1>
+    <div class="alert hidden" id="alert"></div>
+    <div class="tasks-wrap hidden" id="tasks-wrap">
+      <div class="flabel">&gt; АКТИВНЫЕ ЗАДАЧИ · авто-проверка раз в 24ч (изменение → алерт)</div>
+      <div id="task-list" class="ma-task-list"></div>
+    </div>
+
+    <h1 id="form-h1">&gt; ГЛУБОКАЯ ПРОВЕРКА · все пути развёртывания</h1>
     <p class="lead">Вставь <b>валидную</b> сид-фразу. Я выведу адреса по всем известным путям — <b>BTC</b> (Legacy/P2SH-SegWit/SegWit), <b>LTC</b> (3 формата), <b>DOGE</b>, <b>DASH</b>, <b>ETH</b> (Standard + Ledger Live, проверка на ETH/BSC/Polygon), <b>ETC</b> — и проверю каждый на активность: баланс, <b>историю</b> и <b>когда-либо полученные средства</b>. Любой след = адрес живой. Все адреса сверены с bip_utils.</p>
 
-    <div class="flabel">&gt; СИД-ФРАЗА</div>
+    <div class="flabel">&gt; ИМЯ ЗАДАЧИ</div>
+    <input class="ma-input" id="name" autocomplete="off" placeholder="например: Кошелёк Иванова">
+
+    <div class="flabel" style="margin-top:14px">&gt; СИД-ФРАЗА</div>
     <textarea id="seed" spellcheck="false" autocomplete="off" placeholder="вставь 12–24 слова через пробел…"></textarea>
     <div class="vstatus muted" id="seed-status">введите сид-фразу</div>
-    <button class="run" id="run">▶ ПРОВЕРИТЬ ВСЕ ПУТИ</button>
+    <div style="display:flex;gap:12px;flex-wrap:wrap">
+      <button class="run" id="run">▶ ПРОВЕРИТЬ ВСЕ ПУТИ</button>
+      <button class="close-task hidden" id="close-task">✕ ЗАКРЫТЬ ЗАДАЧУ (свернуть в задачи)</button>
+    </div>
 
     <div class="scanline" id="scanline"></div>
     <div id="summary"></div>
