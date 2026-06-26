@@ -205,7 +205,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 patch = json.loads(self.rfile.read(n) or b"{}")
             except json.JSONDecodeError:
                 return self._json({"error": "bad json"}, 400)
-            allowed = ("status", "results", "log", "attempts", "done", "stopped", "pausedAt")
+            allowed = ("status", "results", "log", "attempts", "done", "stopped", "pausedAt", "stats", "balScanned")
             with LOCK:
                 tasks = load_tasks()
                 for t in tasks:

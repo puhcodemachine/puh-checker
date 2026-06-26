@@ -10,6 +10,36 @@
   function dur(sec) { sec = Math.max(0, Math.floor(sec)); return pad(Math.floor(sec / 3600)) + ":" + pad(Math.floor(sec % 3600 / 60)) + ":" + pad(sec % 60); }
   function esc(s) { return (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
   function fmtDateTime(ts) { var d = new Date(ts * 1000); return pad(d.getDate()) + "." + pad(d.getMonth() + 1) + "." + d.getFullYear() + "  " + clock(ts); }
+  function fmtBig(x) {
+    if (x == null) return "—";
+    if (x >= 1e12) return (x / 1e12).toFixed(2) + " трлн";
+    if (x >= 1e9) return (x / 1e9).toFixed(2) + " млрд";
+    if (x >= 1e6) return (x / 1e6).toFixed(2) + " млн";
+    if (x >= 1e3) return Math.round(x).toLocaleString("ru");
+    return String(Math.round(x));
+  }
+  function wcount(t) {
+    return window.PUHCORE ? window.PUHCORE.tokWords(t.words || "").length : (("" + (t.words || "")).match(/[A-Za-z]+/g) || []).length;
+  }
+  function statsHtml(t) {
+    var s = t.stats || {};
+    var n = s.words || wcount(t);
+    var space1 = s.checkedL1 != null ? s.checkedL1 : n * 2048;
+    var space2 = s.space2 != null ? s.space2 : (n * (n - 1) / 2) * 2048 * 2048;
+    var valid = s.valid != null ? s.valid : (t.results || []).length;
+    var deep = s.deepChecked || 0;
+    var rem = s.remaining2 != null ? s.remaining2 : Math.max(0, space2 - deep);
+    var used = space1 + deep, day = s.budgetDay || 10000000;
+    return '<div class="td-h">СТАТИСТИКА ПЕРЕБОРА</div><div class="td-grid">' +
+      '<span class="k">СЛОВ В ФРАЗЕ</span><span class="val">' + n + "</span>" +
+      '<span class="k">ПЕРЕБРАНО (1 СЛОВО)</span><span class="val">' + fmtBig(space1) + "</span>" +
+      '<span class="k">ВАЛИДНЫХ ВАРИАНТОВ</span><span class="val green">' + valid + "</span>" +
+      '<span class="k">ЯЗЫКОВ ПРОВЕРЕНО</span><span class="val">' + (s.langsChecked || 9) + " / 9</span>" +
+      '<span class="k">ГЛУБОКИЙ (2 СЛОВА)</span><span class="val">' + fmtBig(deep) + " / " + fmtBig(space2) + "</span>" +
+      '<span class="k">ОСТАЛОСЬ (2 СЛОВА)</span><span class="val amber">' + fmtBig(rem) + "</span>" +
+      '<span class="k">СУТОЧНЫЙ БЮДЖЕТ</span><span class="val">' + fmtBig(used) + " / " + fmtBig(day) + "</span>" +
+      "</div>";
+  }
 
   // ---------- хранилище: сервер, иначе localStorage ----------
   var LS = "puh_tasks";
@@ -94,8 +124,12 @@
     var seen = {}, uniq = [];
     res.forEach(function (r) { if (r.phrase && !seen[r.phrase]) { seen[r.phrase] = 1; uniq.push(r); } });
     log.push({ ts: nowSec(), msg: "найдено валидных фраз: " + uniq.length + " → проверяю балансы каждой сид…" });
+    var n = (window.PUHCORE ? window.PUHCORE.tokWords(words).length : (words.match(/[A-Za-z]+/g) || []).length);
+    var space2 = (n * (n - 1) / 2) * 2048 * 2048;
+    var stats = { words: n, checkedL1: n * 2048, valid: uniq.length, langsChecked: 9,
+                  space2: space2, deepChecked: 0, remaining2: space2, budgetDay: 10000000 };
     // задание остаётся «в работе» (таймер тикает), пока идёт скан балансов; потом ПАУЗА с фиксацией времени
-    return store.update(taskId, { status: "green", results: uniq, log: log, done: true, balScanned: false })
+    return store.update(taskId, { status: "green", results: uniq, log: log, done: true, balScanned: false, stats: stats })
       .then(function () {
         refresh();
         store.get(taskId).then(function (ft) { if (ft) scanResults(ft, true); });
@@ -158,11 +192,14 @@
     $("td-name").textContent = t.name;
     $("td-lamp").className = "lamp " + si.lamp;
     var h = "";
-    h += '<div class="td-sec"><div class="td-h">СТАТУС И ВРЕМЯ</div><div class="td-grid">' +
+    h += '<div class="td-toprow">';
+    h += '<div class="td-sec td-half"><div class="td-h">СТАТУС И ВРЕМЯ</div><div class="td-grid">' +
       '<span class="k">СТАТУС</span><span class="val ' + si.cls + '">' + si.txt + "</span>" +
       '<span class="k">ТИП</span><span class="val">' + esc(t.type) + "</span>" +
       '<span class="k">ЗАПУСК</span><span class="val">' + fmtDateTime(t.started) + "</span>" +
       '<span class="k">ОБЩЕЕ ВРЕМЯ В РАБОТЕ</span>' + runSpan(t, "val") + "</div></div>";
+    h += '<div class="td-sec td-half">' + statsHtml(t) + "</div>";
+    h += "</div>";
     h += '<div class="td-sec"><div class="td-h">МАТЕРИАЛ ЗАДАНИЯ</div>';
     if (t.words) h += '<div class="td-k">СЛОВА</div><div class="td-mat">' + esc(t.words) + "</div>";
     if (t.nums) h += '<div class="td-k" style="margin-top:10px">ЦИФРОВОЙ КОД</div><div class="td-mat">' + esc(t.nums) + "</div>";
@@ -341,7 +378,13 @@
         });
         var results = (t.results || []).concat(added);
         log.push({ ts: nowSec(), msg: "глубокий перебор: проверено комбинаций " + attempts + ", новых валидных " + added.length });
-        store.update(id, { status: "amber", pausedAt: nowSec(), results: results, log: log, balScanned: false }).then(function () {
+        var st = t.stats || {};
+        var nn = st.words || wcount(t);
+        st.space2 = st.space2 != null ? st.space2 : (nn * (nn - 1) / 2) * 2048 * 2048;
+        st.deepChecked = (st.deepChecked || 0) + attempts;
+        st.remaining2 = Math.max(0, st.space2 - st.deepChecked);
+        st.valid = results.length;
+        store.update(id, { status: "amber", pausedAt: nowSec(), results: results, log: log, balScanned: false, stats: st }).then(function () {
           refresh(); flash("глубокий перебор завершён: +" + added.length + " фраз");
           if (!$("task-detail").classList.contains("hidden")) window.openTask(id);
         });
