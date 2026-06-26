@@ -113,5 +113,43 @@
     return uniq;
   }
 
-  root.PUHRECOVER = { oneWord: oneWord, transpose: transpose, dataConsistent: dataConsistent, recover: recover };
+  // ГЛУБОКИЙ УРОВЕНЬ — два слова: логично (фокус на подозрительных позициях), с бюджетом
+  function twoWord(wordsText, numsText, maxAttempts) {
+    var words = C.tokWords(wordsText), n = words.length, base = wl(), out = [];
+    if (n < 12) return { results: out, attempts: 0 };
+    var idx0 = words.map(function (w) { return C.wordIndex(w); });
+    var nums = C.tokNums(numsText || "");
+    var suspect = [];
+    if (nums.length === n) {
+      function miss(b) { var c = 0; for (var i = 0; i < n; i++) if (idx0[i] !== nums[i] - b) c++; return c; }
+      var b = miss(0) <= miss(1) ? 0 : 1;
+      for (var i = 0; i < n; i++) if (idx0[i] !== nums[i] - b) suspect.push(i);
+    }
+    for (var k = 0; k < n; k++) if (idx0[k] === -1 && suspect.indexOf(k) < 0) suspect.push(k);
+    var pos = suspect.length >= 2 ? suspect.slice() : [];
+    for (var p = 0; p < n; p++) pos.push(p);
+    pos = pos.filter(function (v, ix) { return pos.indexOf(v) === ix; });
+    var attempts = 0, seen = {};
+    for (var pi = 0; pi < pos.length; pi++) {
+      for (var pj = pi + 1; pj < pos.length; pj++) {
+        var ii = pos[pi], jj = pos[pj], ok = true;
+        for (var z = 0; z < n; z++) if (z !== ii && z !== jj && idx0[z] === -1) { ok = false; break; }
+        if (!ok) continue;
+        for (var a = 0; a < 2048; a++) {
+          for (var c2 = 0; c2 < 2048; c2++) {
+            if (++attempts > maxAttempts) return { results: out, attempts: attempts };
+            var idx = idx0.slice(); idx[ii] = a; idx[jj] = c2;
+            if (C.checksumOkFromIndices(idx)) {
+              var cand = words.slice(); cand[ii] = base[a]; cand[jj] = base[c2];
+              var key = cand.join(" ");
+              if (!seen[key]) { seen[key] = 1; out.push({ kind: "два слова", words: cand, phrase: key, reason: "два слова: поз." + (ii + 1) + "," + (jj + 1) }); }
+            }
+          }
+        }
+      }
+    }
+    return { results: out, attempts: attempts };
+  }
+
+  root.PUHRECOVER = { oneWord: oneWord, transpose: transpose, dataConsistent: dataConsistent, recover: recover, twoWord: twoWord };
 })(typeof window !== "undefined" ? window : globalThis);

@@ -129,6 +129,14 @@
   .copy-btn:hover{border-color:var(--green);background:var(--green);color:#04130a}
   .addr-copyall .copy-btn{padding:7px 14px;letter-spacing:1px}
 
+  /* подсветка результата с балансом + кнопка продолжения */
+  .res.funded{border-left-color:#3fcf72;background:rgba(63,207,114,.10);box-shadow:0 0 14px rgba(63,207,114,.18)}
+  .fund-badge{color:#3fcf72;font-weight:700;letter-spacing:.5px;text-shadow:0 0 8px rgba(63,207,114,.5)}
+  .scan-status{color:var(--muted);font-size:11px;font-weight:400;letter-spacing:.5px}
+  .btn-continue{margin-top:6px;padding:13px 26px;border:1px solid var(--amber);background:transparent;color:var(--amber);
+    font-family:inherit;font-size:14px;font-weight:700;letter-spacing:1.5px;cursor:pointer;transition:.12s}
+  .btn-continue:hover{background:var(--amber);color:#1a1406;box-shadow:0 0 16px rgba(232,183,58,.35)}
+
   /* ЛЕВАЯ ПАНЕЛЬ ЗАДАНИЙ */
   .sidebar{width:360px;flex-shrink:0;border-right:1px solid var(--green-dim);
     display:flex;flex-direction:column;min-height:0;background:linear-gradient(180deg,rgba(34,160,86,.03),transparent)}

@@ -150,7 +150,7 @@
     h += '<div class="td-sec"><div class="td-h">РЕЖИМЫ РАБОТЫ</div><div class="td-chips">' +
       '<span class="td-chip ' + (m.podbor ? "on" : "") + '">ПОДБОР · ' + (m.podbor ? "ВКЛ" : "выкл") + "</span>" +
       '<span class="td-chip ' + (m.monitor ? "on" : "") + '">МОНИТОРИНГ · ' + (m.monitor ? "ВКЛ" : "выкл") + "</span></div></div>";
-    h += '<div class="td-sec"><div class="td-h">РЕЗУЛЬТАТЫ — ВАЛИДНЫЕ ФРАЗЫ (' + res.length + ") · нажми на фразу → адреса и балансы</div>";
+    h += '<div class="td-sec"><div class="td-h">РЕЗУЛЬТАТЫ — ВАЛИДНЫЕ ФРАЗЫ (' + res.length + ') <span id="scan-status" class="scan-status"></span></div>';
     h += res.length ? res.map(resultHtml).join("") : '<div class="td-empty">валидных фраз пока нет</div>';
     h += "</div>";
 
@@ -161,12 +161,17 @@
       : '<div class="td-empty">журнал пуст</div>';
     h += "</div>";
 
+    if (t.status === "amber")
+      h += '<div class="td-sec"><button class="btn-continue" onclick="continuePerebor(\'' + t.id + '\')">💾 СОХРАНИТЬ РЕЗУЛЬТАТ И ПРОДОЛЖИТЬ ПЕРЕБОР</button>' +
+        '<div class="td-k" style="margin-top:8px">перебор логический и бюджетный (не бесконечный) — продолжит более глубоким поиском (2 слова)</div></div>';
+
     $("td-inner").innerHTML = h;
     var stop = $("td-stop");
     if (stop) {
       if (t.status === "green") { stop.classList.remove("hidden"); stop.onclick = function () { confirmStop(t.id, t.name); }; }
       else { stop.classList.add("hidden"); stop.onclick = null; }
     }
+    scanResults(t);  // фоновый скан балансов + подсветка непустых
   }
 
   function confirmModal(title, text, okText, onOk) {
@@ -199,12 +204,13 @@
   window.goHomePanel = function () { $("task-detail").classList.add("hidden"); goHome(); };  // лого -> главная (дефолт)
 
   // ---------- раскрытие сид: адреса ETH/TRC20/BTC/Monero + балансы + копирование ----------
-  function resultHtml(r) {
+  function resultHtml(r, i) {
     var ph = esc(r.phrase);
-    return '<div class="res">' +
+    var badge = r.funded ? '<span class="fund-badge">💰 ЕСТЬ СРЕДСТВА</span> ' : '';
+    return '<div class="res' + (r.funded ? ' funded' : '') + '" data-ri="' + i + '">' +
       '<div class="res-head" onclick="toggleRes(this)">' +
         '<span class="ts">' + fmtDateTime(r.ts) + '</span>' +
-        '<div class="res-mid"><div class="rphrase">' + ph + '</div><div class="rreason">' + esc(r.reason || r.stage || "") + '</div></div>' +
+        '<div class="res-mid"><div class="rphrase">' + badge + ph + '</div><div class="rreason">' + esc(r.reason || r.stage || "") + '</div></div>' +
         '<span class="res-caret">▾</span></div>' +
       '<div class="res-body hidden" data-phrase="' + ph + '" data-loaded="0"></div></div>';
   }
@@ -245,6 +251,83 @@
     var o = btn.textContent; btn.textContent = "✓"; setTimeout(function () { btn.textContent = o; }, 1100);
     flash("скопировано");
   };
+
+  // ---------- скан балансов всех результатов + подсветка непустых ----------
+  function bnum(x) { var v = parseFloat(x); return isNaN(v) ? 0 : v; }
+  function markFunded(i) {
+    var el = document.querySelector('.res[data-ri="' + i + '"]');
+    if (!el) return;
+    el.classList.add("funded");
+    var ph = el.querySelector(".rphrase");
+    if (ph && !ph.querySelector(".fund-badge"))
+      ph.innerHTML = '<span class="fund-badge">💰 ЕСТЬ СРЕДСТВА</span> ' + ph.innerHTML;
+  }
+  function scanResults(t) {
+    if (!t || !t.results || !t.results.length || t.balScanned) return;
+    var D = window.PUHDERIVE; if (!D) return;
+    var ss = $("scan-status"), i = 0, total = t.results.length, found = 0;
+    function next() {
+      if (i >= total) {
+        t.balScanned = true;
+        if (ss) ss.textContent = "· балансы проверены" + (found ? (" — СРЕДСТВА: " + found) : " — пусто");
+        store.update(t.id, { results: t.results, balScanned: true });
+        return;
+      }
+      if (ss) ss.textContent = "· проверка балансов " + (i + 1) + "/" + total + "…";
+      var r = t.results[i], a = D.addresses(r.phrase);
+      if (!a) { i++; return setTimeout(next, 10); }
+      Promise.all([
+        a.eth ? D.ethBalance(a.eth) : Promise.resolve("—"),
+        a.btc ? D.btcBalance(a.btc) : Promise.resolve("—"),
+        a.trx ? D.trxBalance(a.trx) : Promise.resolve("—")
+      ]).then(function (b) {
+        r.bal = { eth: b[0], btc: b[1], trx: b[2] };
+        r.funded = bnum(b[0]) > 0 || bnum(b[1]) > 0 || bnum(b[2]) > 0;
+        if (r.funded) { found++; markFunded(i); flash("💰 найдены средства — результат #" + (i + 1)); }
+        i++; setTimeout(next, 200);
+      }).catch(function () { i++; setTimeout(next, 200); });
+    }
+    next();
+  }
+
+  // ---------- продолжить перебор (глубокий, логический, бюджетный) ----------
+  function continuePerebor(id) {
+    store.get(id).then(function (t) {
+      if (!t) return;
+      flash("глубокий перебор запущен в фоне…");
+      var log = t.log || [];
+      log.push({ ts: nowSec(), msg: "глубокий перебор (2 слова) запущен в фоне" });
+      store.update(id, { status: "green", log: log }).then(function () {
+        refresh(); if (!$("task-detail").classList.contains("hidden")) window.openTask(id);
+      });
+      function finish(twResults, attempts) {
+        var seen = {}; (t.results || []).forEach(function (r) { seen[r.phrase] = 1; });
+        var added = [];
+        (twResults || []).forEach(function (c) {
+          if (!seen[c.phrase]) { seen[c.phrase] = 1; added.push({ ts: nowSec(), phrase: c.phrase, stage: "глубокий перебор", reason: c.reason }); }
+        });
+        var results = (t.results || []).concat(added);
+        log.push({ ts: nowSec(), msg: "глубокий перебор: проверено комбинаций " + attempts + ", новых валидных " + added.length });
+        store.update(id, { status: "amber", pausedAt: nowSec(), results: results, log: log, balScanned: false }).then(function () {
+          refresh(); flash("глубокий перебор завершён: +" + added.length + " фраз");
+          if (!$("task-detail").classList.contains("hidden")) window.openTask(id);
+        });
+      }
+      var w = null;
+      try { w = new Worker("static/worker.js"); } catch (e) { w = null; }
+      if (w) {
+        w.onmessage = function (ev) { finish(ev.data.results, ev.data.attempts); w.terminate(); };
+        w.onerror = function () { w.terminate(); finish([], 0); };
+        w.postMessage({ words: t.words, nums: t.nums, budget: 6000000 });
+      } else {
+        setTimeout(function () {
+          var tw = window.PUHRECOVER ? window.PUHRECOVER.twoWord(t.words, t.nums, 300000) : { results: [], attempts: 0 };
+          finish(tw.results, tw.attempts);
+        }, 200);
+      }
+    });
+  }
+  window.continuePerebor = continuePerebor;
 
   function goHome() {
     document.querySelectorAll(".tab").forEach(function (t) { t.classList.remove("active"); });
