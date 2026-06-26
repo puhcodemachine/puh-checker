@@ -1,16 +1,29 @@
 #!/usr/bin/env bash
-# Собирает статичную версию панели в docs/ для GitHub Pages.
-# Работает без бэкенда: задания через localStorage, проверки/подбор — клиентский JS.
-# Встраивает пароль-барьер (хэш из .gate_hash, плейнтекст в репо не попадает).
+# Собирает статичную витрину в docs/ для GitHub Pages:
+#   docs/            — панель (web-checker)
+#   docs/mode-a/     — Режим А (глубокая проверка), отдельная страница, панель не трогается
+# Пароль-барьер встраивается в обе страницы (хэш из .gate_hash, плейнтекст в репо не попадает).
 set -e
 cd "$(dirname "$0")"
 rm -rf docs
 mkdir -p docs/static
+
+# --- панель ---
 cp static/bip39.js static/bip39_langs.js static/checker.js static/recover.js static/derive.js static/worker.js static/tasks.js docs/static/
 cp -r static/vendor docs/static/vendor
 sed -e 's#src="/static/#src="static/#g' -e 's/{{USER}}/ПУХ/g' templates/panel.html > docs/index.html
 touch docs/.nojekyll
 
+# --- Режим А (../mode-a) ---
+if [ -d ../mode-a ]; then
+  mkdir -p docs/mode-a/static
+  cp static/bip39.js static/checker.js docs/mode-a/static/
+  cp static/vendor/ethers.umd.min.js docs/mode-a/static/ethers.umd.min.js
+  cp ../mode-a/static/*.js docs/mode-a/static/
+  cp ../mode-a/index.html docs/mode-a/index.html
+fi
+
+# --- барьер в обе страницы ---
 GATE_HASH="$(cat .gate_hash 2>/dev/null || echo '')"
 GATE_HASH="$GATE_HASH" /root/PUH/.venv/bin/python - <<'PY'
 import os
@@ -42,10 +55,10 @@ gate = '''
 })();
 </script>
 '''.replace("__HASH__", gate_hash)
-p = "docs/index.html"
-html = open(p, encoding="utf-8").read()
-html = html.replace("</body>", gate + "</body>")
-open(p, "w", encoding="utf-8").write(html)
+for p in ("docs/index.html", "docs/mode-a/index.html"):
+    if os.path.exists(p):
+        html = open(p, encoding="utf-8").read().replace("</body>", gate + "</body>")
+        open(p, "w", encoding="utf-8").write(html)
 print("барьер встроен" if gate_hash else "ВНИМАНИЕ: .gate_hash пуст — барьер без пароля!")
 PY
-echo "docs/ собран ($(ls docs/static | wc -l) файлов в static)"
+echo "docs/ собран: панель + $( [ -d ../mode-a ] && echo 'Режим А (mode-a/)' || echo 'без mode-a' )"

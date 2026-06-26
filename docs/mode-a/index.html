@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ПУХ · РЕЖИМ А — глубокая проверка</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#050805;--panel:#0a110b;--green:#32c266;--green-dim:#1a6a35;--green-deep:#0c3016;
+    --amber:#e8b73a;--red:#e85a5a;--txt:#6fbe87;--muted:#386b49;--line:#143f24}
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{background:var(--bg);color:var(--txt);font-family:'Share Tech Mono',ui-monospace,monospace;overflow-y:auto}
+  body::before{content:"";position:fixed;inset:0;z-index:9;pointer-events:none;
+    background:repeating-linear-gradient(0deg,rgba(0,0,0,.18) 0,rgba(0,0,0,.18) 1px,transparent 2px,transparent 3px);mix-blend-mode:multiply}
+  .frame{max-width:1000px;margin:0 auto;padding:22px;position:relative;z-index:1}
+  .top{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--green-dim);
+    padding-bottom:10px;margin-bottom:22px}
+  .brand{display:flex;align-items:center;gap:10px}
+  .emblem{width:30px;height:30px;display:grid;place-items:center;border-radius:6px;
+    background:linear-gradient(135deg,var(--green),#179a50);color:#04130a;font-weight:800;font-size:16px}
+  .brand b{font-size:15px;letter-spacing:1.5px;color:var(--green)}
+  .brand span{display:block;font-size:10px;color:var(--muted);letter-spacing:2px}
+  .top a{color:var(--muted);font-size:12px;text-decoration:none;border:1px solid var(--line);padding:7px 12px}
+  .top a:hover{border-color:var(--green);color:var(--green)}
+  h1{font-size:16px;letter-spacing:1.5px;color:var(--green);margin:0 0 6px}
+  .lead{color:var(--muted);font-size:13px;margin:0 0 18px;line-height:1.5}
+  .flabel{font-size:12px;color:var(--green);letter-spacing:1px;margin:0 0 7px}
+  textarea{width:100%;height:74px;background:#070f07;border:1px solid var(--line);color:var(--txt);
+    font-family:inherit;font-size:15px;padding:11px 13px;outline:none;resize:none;line-height:1.5}
+  textarea:focus{border-color:var(--green)}
+  .vstatus{font-size:13px;margin:8px 0 14px;min-height:18px}
+  .vstatus.green{color:#3fcf72}.vstatus.amber{color:var(--amber)}.vstatus.red{color:var(--red)}.vstatus.muted{color:var(--muted)}
+  button.run{padding:12px 26px;border:0;cursor:pointer;background:linear-gradient(135deg,var(--green),#179a50);
+    color:#04130a;font-family:inherit;font-size:14px;font-weight:700;letter-spacing:1.5px}
+  button.run:hover{filter:brightness(1.1)}
+  button.run:disabled{opacity:.5;cursor:default}
+  .scanline{margin:18px 0 8px;color:var(--muted);font-size:12px;letter-spacing:.5px}
+  .summary{margin:16px 0;padding:12px 14px;border:1px solid var(--line);font-size:14px}
+  .summary.hit{border-color:#3fcf72;background:rgba(63,207,114,.08);color:#3fcf72;box-shadow:0 0 14px rgba(63,207,114,.15)}
+  .summary.miss{border-color:var(--line);color:var(--muted)}
+  .net-group{margin:18px 0}
+  .net-h{font-size:13px;color:var(--green);letter-spacing:1px;border-bottom:1px dashed var(--line);padding-bottom:6px;margin-bottom:8px}
+  .addr-row{display:grid;grid-template-columns:150px 1fr 130px 110px;gap:12px;align-items:center;
+    padding:7px 6px;border-bottom:1px dotted var(--line);font-size:12.5px}
+  .addr-row.alive{background:rgba(63,207,114,.08);border-left:2px solid #3fcf72;padding-left:8px}
+  .ar-std{color:var(--muted);font-size:11px}
+  .ar-addr{color:var(--txt);word-break:break-all;font-size:12px}
+  .ar-bal{color:var(--amber);text-align:right;font-size:12px}
+  .ar-flag{text-align:right;font-size:11px;letter-spacing:.5px}
+  .ar-flag.alive{color:#3fcf72;font-weight:700}
+  .ar-flag.empty{color:var(--muted)}
+  .note{margin-top:24px;color:var(--muted);font-size:11px;line-height:1.6;border-top:1px dashed var(--line);padding-top:12px}
+</style>
+</head>
+<body>
+  <div class="frame">
+    <div class="top">
+      <div class="brand"><div class="emblem">П</div><div><b>ПУХ · РЕЖИМ А</b><span>глубокая проверка активности</span></div></div>
+      <a href="../">← к панели</a>
+    </div>
+
+    <h1>&gt; ГЛУБОКАЯ ПРОВЕРКА · все пути развёртывания</h1>
+    <p class="lead">Вставь <b>валидную</b> сид-фразу. Я выведу адреса по всем известным путям (ETH стандарт и Ledger Live, BTC, TRON) и проверю каждый на активность — баланс или историю транзакций. Любая пыль = адрес живой.</p>
+
+    <div class="flabel">&gt; СИД-ФРАЗА</div>
+    <textarea id="seed" spellcheck="false" autocomplete="off" placeholder="вставь 12–24 слова через пробел…"></textarea>
+    <div class="vstatus muted" id="seed-status">введите сид-фразу</div>
+    <button class="run" id="run">▶ ПРОВЕРИТЬ ВСЕ ПУТИ</button>
+
+    <div class="scanline" id="scanline"></div>
+    <div id="summary"></div>
+    <div id="report"></div>
+
+    <div class="note">⚠️ Демо: проверяются ETH (стандарт + Ledger Live), BTC (legacy), TRON — первые адреса каждого пути. Балансы/история через публичные API (best-effort). Дальше добавим BTC segwit/taproot, LTC/DOGE, Monero и проверку на уровне аккаунта (xpub) для полноты.</div>
+  </div>
+  <script src="static/bip39.js"></script>
+  <script src="static/checker.js"></script>
+  <script src="static/ethers.umd.min.js"></script>
+  <script src="static/modea.js"></script>
+
+<div id="gate" style="position:fixed;inset:0;z-index:9999;background:#050805;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:13px;font-family:'Share Tech Mono',monospace;color:#32c266">
+  <div style="font-size:18px;letter-spacing:3px;text-shadow:0 0 8px rgba(34,160,86,.4)">ПУХ · ROBCO TERMLINK</div>
+  <div style="font-size:12px;color:#386b49;letter-spacing:1px">требуется авторизация</div>
+  <input id="gate-pw" type="password" placeholder="пароль" autofocus autocomplete="off"
+    style="margin-top:8px;padding:12px 14px;background:#0a110b;border:1px solid #143f24;color:#6fbe87;font-family:inherit;font-size:15px;outline:none;width:260px;text-align:center">
+  <button id="gate-go" style="padding:11px 28px;background:#32c266;color:#04130a;border:0;font-family:inherit;font-weight:700;letter-spacing:2px;cursor:pointer">ВОЙТИ</button>
+  <div id="gate-err" style="color:#e85a5a;font-size:12px;min-height:14px"></div>
+  <div style="position:fixed;bottom:14px;font-size:10px;color:#2a4f37;letter-spacing:1px">статичный превью · защита-барьер (не серверная)</div>
+</div>
+<script>
+(function(){
+  var HASH="be3ebb0bf33a4778734e6e189f11989f24e502d5abbf789e213907add6086602";
+  var g=document.getElementById("gate");
+  function open(){ g.style.display="none"; }
+  if(sessionStorage.getItem("puh_gate")==="1"){ open(); return; }
+  function check(){
+    var pw=document.getElementById("gate-pw").value;
+    var h=[].map.call(window.PUHCORE.sha256(new TextEncoder().encode(pw)),function(b){return("0"+b.toString(16)).slice(-2);}).join("");
+    if(h===HASH){ sessionStorage.setItem("puh_gate","1"); open(); }
+    else { document.getElementById("gate-err").textContent="неверный пароль"; document.getElementById("gate-pw").value=""; }
+  }
+  document.getElementById("gate-go").onclick=check;
+  document.getElementById("gate-pw").addEventListener("keydown",function(e){ if(e.key==="Enter") check(); });
+})();
+</script>
+</body>
+</html>
