@@ -152,8 +152,10 @@
     return '<span class="' + cls + ' t-run">' + (f ? dur(f - t.started) : "--:--:--") + "</span>";
   }
   function cardHtmlA(t) {
-    var alive = t.alive || 0, lamp = alive ? "green" : "amber", cls = alive ? "green" : "amber";
-    var st = alive ? "● ЖИВАЯ · активных " + alive : "проверено · пусто";
+    var run = t.status === "running", alive = t.alive || 0;
+    var lamp = run ? "green" : t.status === "red" ? "red" : (alive ? "green" : "amber");
+    var cls = run ? "green" : t.status === "red" ? "red" : (alive ? "green" : "amber");
+    var st = run ? "● идёт проверка " + (t.progress || "") : t.status === "red" ? "■ остановлено" : (alive ? "● ЖИВАЯ · активных " + alive : "проверено · пусто");
     return '<div class="task" data-id="' + t.id + '" onclick="openTask(\'' + t.id + '\')">' +
       '<div class="task-top"><span class="task-name">' + esc(t.name) + ' <span class="mode-badge a">А</span></span><span class="lamp ' + lamp + '"></span></div>' +
       '<div class="task-status ' + cls + '">' + st + '</div>' +
@@ -220,19 +222,24 @@
     return html || '<div class="td-empty">нет адресов</div>';
   }
   function renderDetailA(t) {
-    var alive = t.alive || 0, res = t.results || [];
+    var run = t.status === "running", stopped = t.status === "red", alive = t.alive || 0, res = t.results || [];
+    var stTxt = run ? "● ИДЁТ ПРОВЕРКА " + (t.progress || "") : stopped ? "■ ОСТАНОВЛЕНО" : alive ? "● ЖИВАЯ — активных " + alive : "проверено · пусто";
+    var stCls = run ? "green" : stopped ? "red" : alive ? "green" : "muted";
     $("td-name").textContent = t.name;
-    $("td-lamp").className = "lamp " + (alive ? "green" : "amber");
+    $("td-lamp").className = "lamp " + (run ? "green" : stopped ? "red" : alive ? "green" : "amber");
     var h = '<div class="td-toprow"><div class="td-sec td-half"><div class="td-h">СТАТУС И ВРЕМЯ</div><div class="td-grid">' +
       '<span class="k">РЕЖИМ</span><span class="val">А · проверка активности</span>' +
-      '<span class="k">СТАТУС</span><span class="val ' + (alive ? "green" : "muted") + '">' + (alive ? "● ЖИВАЯ — активных " + alive : "проверено · пусто") + "</span>" +
+      '<span class="k">СТАТУС</span><span class="val ' + stCls + '">' + stTxt + "</span>" +
       '<span class="k">ТИП</span><span class="val">' + esc(t.type || "") + "</span>" +
       '<span class="k">ЗАПУСК</span><span class="val">' + fmtDateTime(t.started) + "</span>" +
       '<span class="k">ПОСЛЕДНЯЯ ПРОВЕРКА</span><span class="val">' + (t.lastCheck ? fmtDateTime(t.lastCheck) : "—") + "</span>" +
       '<span class="k">АВТО-ПРОВЕРКА</span><span class="val">раз в 24ч (в Режиме А)</span></div></div></div>';
     h += '<div class="td-sec"><div class="td-h">СИД-ФРАЗА</div><div class="td-mat">' + esc(t.words || t.seed || "") + "</div></div>";
     h += '<div class="td-sec"><div class="td-h">АДРЕСА И АКТИВНОСТЬ (' + res.length + " путей · живых " + alive + ")</div>" + renderAddrReport(res) + "</div>";
-    h += '<div class="td-sec"><button class="btn-continue" onclick="location.href=\'mode-a/\'">↗ ОТКРЫТЬ В РЕЖИМЕ А (перепроверить)</button></div>';
+    h += '<div class="td-sec" style="display:flex;gap:12px;flex-wrap:wrap">' +
+      '<button class="btn-continue" onclick="location.href=\'mode-a/?open=' + t.id + '\'">✎ РЕДАКТИРОВАТЬ / ПЕРЕПРОВЕРИТЬ (Режим А)</button>' +
+      (run ? '<button class="td-stop" style="position:static" onclick="maStopA(\'' + t.id + '\')">⏸ ОСТАНОВИТЬ</button>' : "") +
+      "</div>";
     $("td-inner").innerHTML = h;
     var stop = $("td-stop"); if (stop) { stop.classList.add("hidden"); stop.onclick = null; }
   }
@@ -311,6 +318,7 @@
   window.closeTask = function () { curOpen = null; $("task-detail").classList.add("hidden"); };
   window.openDetailDirect = function (t) { renderDetail(t); $("task-detail").classList.remove("hidden"); };
   window.goHomePanel = function () { curOpen = null; $("task-detail").classList.add("hidden"); goHome(); };  // лого -> главная (дефолт)
+  window.maStopA = function (id) { store.update(id, { status: "red" }).then(function () { refresh(); if (curOpen === id) window.openTask(id); }); };
 
   // ---------- раскрытие сид: адреса ETH/TRC20/BTC/Monero + балансы + копирование ----------
   function resultHtml(r, i) {
