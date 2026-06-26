@@ -56,9 +56,9 @@
   .ma-input{width:100%;background:#070f07;border:1px solid var(--line);color:var(--txt);font-family:inherit;
     font-size:15px;padding:11px 13px;outline:none}
   .ma-input:focus{border-color:var(--green)}
-  .close-task{padding:12px 22px;border:1px solid var(--line);background:transparent;color:var(--muted);
-    font-family:inherit;font-size:13px;letter-spacing:1px;cursor:pointer}
-  .close-task:hover{border-color:var(--green);color:var(--green)}
+  .close-task{padding:12px 24px;border:1px solid var(--green);background:rgba(34,160,86,.12);color:var(--green);
+    font-family:inherit;font-size:13px;font-weight:700;letter-spacing:1px;cursor:pointer}
+  .close-task:hover{background:var(--green);color:#04130a;box-shadow:0 0 14px rgba(34,160,86,.4)}
   .close-task.hidden,.tasks-wrap.hidden,.alert.hidden{display:none}
   .alert{margin-bottom:16px;padding:12px 16px;border:1px solid var(--amber);background:rgba(232,183,58,.1);
     color:var(--amber);font-size:14px;letter-spacing:.3px}
@@ -102,7 +102,7 @@
     <div class="vstatus muted" id="seed-status">введите сид-фразу</div>
     <div style="display:flex;gap:12px;flex-wrap:wrap">
       <button class="run" id="run">▶ ПРОВЕРИТЬ ВСЕ ПУТИ</button>
-      <button class="close-task hidden" id="close-task">💾 СОХРАНИТЬ ЗАДАЧУ И ПРОДОЛЖИТЬ</button>
+      <button class="close-task hidden" id="close-task">✕ ЗАКРЫТЬ В ТРЕЙ (работает в фоне)</button>
     </div>
 
     <div class="scanline" id="scanline"></div>

@@ -123,13 +123,15 @@
     all.push({ id: curId, name: name, mode: "A", type: "проверка активности · 45 путей", status: "running", seed: seed, words: seed, results: [], alive: 0, created: now, started: now, lastCheck: null, changed: false, progress: "0/45", log: [{ ts: now, msg: "проверка активности запущена" }] });
     save(all);
     lastRows = null; $("report").innerHTML = ""; $("summary").innerHTML = "";
-    $("close-task").classList.remove("hidden");   // «Сохранить и продолжить» доступна сразу
+    var btn = $("run"); btn.disabled = true; btn.textContent = "⏳ ИДЁТ В ФОНЕ…";
+    $("close-task").classList.remove("hidden");   // «закрыть в трей» доступна сразу
     renderShown(); renderTaskList();
     scanLoop(curId);
   }
 
   function saveAndContinue() {
-    // сворачиваем форму — скан продолжается в фоне
+    // сворачиваем форму — скан продолжается в фоне; форма готова для следующей задачи
+    var btn = $("run"); btn.disabled = false; btn.textContent = "▶ ПРОВЕРИТЬ ВСЕ ПУТИ";
     $("report").innerHTML = ""; $("summary").innerHTML = ""; $("summary").className = "summary"; $("scanline").textContent = "";
     $("close-task").classList.add("hidden");
     $("name").value = ""; $("seed").value = ""; $("seed-status").className = "vstatus muted"; $("seed-status").textContent = "введите сид-фразу";
@@ -139,6 +141,7 @@
 
   window.maOpen = function (id) {
     var t = byId(id); if (!t) return;
+    var rb = $("run"); rb.disabled = false; rb.textContent = "▶ ПРОВЕРИТЬ ВСЕ ПУТИ";
     curId = id; $("name").value = t.name; $("seed").value = t.seed;
     if (t.changed) updateTask(id, { changed: false });
     lastRows = running[id] ? lastRows : fatten(t.results);
