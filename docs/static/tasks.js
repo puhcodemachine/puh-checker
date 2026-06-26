@@ -23,16 +23,22 @@
     var words = (p.words || "").trim(), nums = (p.nums || "").trim();
     var id = Math.random().toString(16).slice(2, 8);
     var wc = (words.match(/[A-Za-z]+/g) || []).length;
-    var name = words ? "SEED-" + id.toUpperCase().slice(0, 4) : "CODE-" + id.toUpperCase().slice(0, 4);
+    var gen = (words ? "SEED-" : "CODE-") + id.toUpperCase().slice(0, 4);
+    var name = (p.name || "").trim() || gen;
     var type = words ? "сид-фраза · " + wc + " слов" : "цифровой код";
     var now = Date.now() / 1000;
-    var t = { id: id, name: name, type: type, status: "green", modes: { podbor: !!p.podbor, monitor: !!p.monitor },
-              words: words, nums: nums, created: now, started: now, results: [] };
+    var t = { id: id, name: name, type: type, status: "green", modes: { podbor: true, monitor: !!p.monitor },
+              words: words, nums: nums, created: now, started: now, results: [], log: [] };
     var a = lsLoad(); a.push(t); lsSave(a); return t;
   }
   function lsStop(id) {
     var a = lsLoad(), found = null;
     a.forEach(function (t) { if (t.id === id) { t.status = "red"; t.stopped = Date.now() / 1000; found = t; } });
+    lsSave(a); return found;
+  }
+  function lsUpdate(id, patch) {
+    var a = lsLoad(), found = null;
+    a.forEach(function (t) { if (t.id === id) { for (var k in patch) t[k] = patch[k]; found = t; } });
     lsSave(a); return found;
   }
   function jsonOrThrow(r) {
@@ -56,8 +62,45 @@
     stop: function (id) {
       return fetch("/api/tasks/" + id + "/stop", { method: "POST" }).then(jsonOrThrow).then(function (d) { return d.task; })
         .catch(function () { return lsStop(id); });
+    },
+    update: function (id, patch) {
+      return fetch("/api/tasks/" + id + "/update", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) })
+        .then(jsonOrThrow).then(function (d) { return d.task; }).catch(function () { return lsUpdate(id, patch); });
     }
   };
+
+  // ---------- ЛОГИЧНЫЙ ПЕРЕБОР (демо, лимит 10 млн/сид) ----------
+  var DEMO_LIMIT = 10000000;
+  function nowSec() { return Date.now() / 1000; }
+  function runPerebor(taskId, words, nums) {
+    var res = [], log = [];
+    log.push({ ts: nowSec(), msg: "перебор запущен · логичный режим (демо, лимит 10 млн попыток/сид)" });
+    // 1) числовой якорь + подбор валидного слова + перестановка (англ.)
+    var cand = (window.PUHRECOVER ? window.PUHRECOVER.recover(words, nums) : []);
+    log.push({ ts: nowSec(), msg: "числовой якорь + подбор слова: валидных вариантов найдено " + cand.length });
+    cand.slice(0, 50).forEach(function (c) {
+      res.push({ ts: nowSec(), phrase: c.phrase, stage: "подбор слова",
+                 reason: c.kind + (c.from ? " [" + c.from + " → " + c.to + "]" : "") });
+    });
+    // 2) перевод в цифры и сверка по всем языкам
+    if (window.PUHCORE && window.PUHCORE.languageScan) {
+      var ls = window.PUHCORE.languageScan(words, nums).filter(function (x) { return x.valid; });
+      log.push({ ts: nowSec(), msg: "перевод в индексы и сверка по 9 словарям: валидных языков " + ls.length });
+      ls.forEach(function (v) {
+        res.push({ ts: nowSec(), phrase: (v.words || []).join(" "), stage: "языковая сверка", reason: "валидна в языке: " + v.name });
+      });
+    }
+    // dedup по фразе
+    var seen = {}, uniq = [];
+    res.forEach(function (r) { if (r.phrase && !seen[r.phrase]) { seen[r.phrase] = 1; uniq.push(r); } });
+    var status = uniq.length ? "amber" : "green";
+    log.push({ ts: nowSec(), msg: uniq.length
+      ? "ИТОГ: найдено валидных фраз: " + uniq.length + " → требуется проверка (жёлтый сигнал)"
+      : "ИТОГ: на 1-м уровне совпадений нет — нужен более глубокий перебор (2+ ошибки)" });
+    return store.update(taskId, { status: status, results: uniq, log: log, done: true })
+      .then(function () { refresh(); });
+  }
+  window.runPereborDemo = runPerebor;
 
   // ---------- рендер ----------
   function statusInfo(s) {
@@ -66,7 +109,7 @@
     return { lamp: "red", cls: "red", txt: "■ ОСТАНОВЛЕНО" };
   }
   function runSpan(t, cls) {
-    if (t.status === "green")
+    if (t.status !== "red")  // green/amber — идёт/найдено: тикаем живое время
       return '<span class="' + cls + ' t-run" data-started="' + t.started + '">' + dur(Date.now() / 1000 - t.started) + "</span>";
     return '<span class="' + cls + ' t-run">' + (t.stopped ? dur(t.stopped - t.started) : "--:--:--") + "</span>";
   }
@@ -105,11 +148,22 @@
     h += '<div class="td-sec"><div class="td-h">РЕЖИМЫ РАБОТЫ</div><div class="td-chips">' +
       '<span class="td-chip ' + (m.podbor ? "on" : "") + '">ПОДБОР · ' + (m.podbor ? "ВКЛ" : "выкл") + "</span>" +
       '<span class="td-chip ' + (m.monitor ? "on" : "") + '">МОНИТОРИНГ · ' + (m.monitor ? "ВКЛ" : "выкл") + "</span></div></div>";
-    h += '<div class="td-sec"><div class="td-h">РЕЗУЛЬТАТЫ (' + res.length + ")</div>";
+    h += '<div class="td-sec"><div class="td-h">РЕЗУЛЬТАТЫ — ВАЛИДНЫЕ ФРАЗЫ (' + res.length + ")</div>";
     h += res.length
-      ? res.map(function (r) { return '<div class="td-res-row"><span class="ts">' + fmtDateTime(r.ts) + "</span><span>" + esc(r.phrase) + "</span></div>"; }).join("")
-      : '<div class="td-empty">результатов пока нет — движок перебора ещё не запущен (следующий шаг)</div>';
+      ? res.map(function (r) {
+          return '<div class="td-res-row"><span class="ts">' + fmtDateTime(r.ts) +
+            '</span><span><div class="rphrase">' + esc(r.phrase) + '</div><div class="rreason">' + esc(r.reason || r.stage || "") + "</div></span></div>";
+        }).join("")
+      : '<div class="td-empty">валидных фраз пока нет</div>';
     h += "</div>";
+
+    var lg = t.log || [];
+    h += '<div class="td-sec"><div class="td-h">ЖУРНАЛ ЗАДАНИЯ — БАЗА (' + lg.length + ")</div>";
+    h += lg.length
+      ? lg.map(function (e) { return '<div class="td-log-row"><span class="ts">' + fmtDateTime(e.ts) + "</span><span>" + esc(e.msg) + "</span></div>"; }).join("")
+      : '<div class="td-empty">журнал пуст</div>';
+    h += "</div>";
+
     $("td-inner").innerHTML = h;
     var stop = $("td-stop");
     if (stop) {
@@ -167,19 +221,17 @@
     var btn = $("btn-start");
     if (!btn) return;
     btn.addEventListener("click", function () {
-      var words = ($("ta-words") || {}).value || "", nums = ($("ta-nums") || {}).value || "";
-      var podbor = !!($("tg-podbor") || {}).checked, monitor = !!($("tg-monitor") || {}).checked;
-      if (!words.trim() && !nums.trim()) { flash("строки пустые — введи слова или числа"); return; }
-      btn.disabled = true; btn.textContent = "⏳ СОЗДАЮ…";
-      store.create({ words: words, nums: nums, podbor: podbor, monitor: monitor }).then(function (t) {
-        btn.disabled = false; btn.textContent = "▶ НАЧАТЬ ЗАДАНИЕ";
+      var name = ($("nt-name") || {}).value || "";
+      var words = ($("nt-words") || {}).value || "", nums = ($("nt-nums") || {}).value || "";
+      if (!words.trim() && !nums.trim()) { flash("введи слова или числа"); return; }
+      btn.disabled = true; btn.textContent = "⏳ ЗАПУСК…";
+      store.create({ name: name, words: words, nums: nums }).then(function (t) {
+        btn.disabled = false; btn.textContent = "▶ НАЧАТЬ ПЕРЕБОР";
         if (t) {
-          $("ta-words").value = ""; $("ta-nums").value = "";
-          if ($("tg-podbor")) $("tg-podbor").checked = false;
-          if ($("tg-monitor")) $("tg-monitor").checked = false;
-          $("ta-words").dispatchEvent(new Event("input"));
+          $("nt-name").value = ""; $("nt-words").value = ""; $("nt-nums").value = "";
           goHome(); refresh();
-          flash("задание " + t.name + " запущено 🟢");
+          flash("задание " + t.name + " запущено 🟢 — идёт перебор");
+          setTimeout(function () { runPerebor(t.id, words, nums); }, 150);
         } else flash("не удалось создать задание");
       });
     });

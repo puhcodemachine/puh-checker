@@ -99,8 +99,13 @@
     text-shadow:0 0 6px rgba(34,160,86,.4)}
   .td-empty{color:var(--muted);font-size:13px;padding:16px;border:1px dashed var(--line);text-align:center}
   .td-res-row{display:grid;grid-template-columns:185px 1fr;gap:14px;padding:9px 12px;border-left:2px solid var(--amber);
-    background:rgba(255,210,63,.05);margin-bottom:4px;font-size:13px}
+    background:rgba(232,183,58,.06);margin-bottom:4px;font-size:13px}
   .td-res-row .ts{color:var(--muted)}
+  .td-res-row .rphrase{color:#3fcf72;font-size:14px;word-break:break-word;letter-spacing:.5px}
+  .td-res-row .rreason{color:var(--muted);font-size:11px;margin-top:3px}
+  .td-log-row{display:grid;grid-template-columns:185px 1fr;gap:14px;padding:6px 12px;font-size:12px;
+    border-bottom:1px dotted var(--line);color:var(--txt)}
+  .td-log-row .ts{color:var(--muted)}
 
   /* ЛЕВАЯ ПАНЕЛЬ ЗАДАНИЙ */
   .sidebar{width:360px;flex-shrink:0;border-right:1px solid var(--green-dim);
@@ -175,6 +180,13 @@
   .home-hint{font-size:13px;letter-spacing:1.5px;color:var(--muted)}
 
   .field{margin-bottom:18px}
+  .nt-input,.nt-area{width:100%;box-sizing:border-box;background:#070f07;border:1px solid var(--line);
+    color:var(--txt);font-family:inherit;font-size:15px;padding:11px 13px;outline:none;letter-spacing:.5px}
+  .nt-input:focus,.nt-area:focus{border-color:var(--green);box-shadow:0 0 10px rgba(34,160,86,.15)}
+  .nt-input::placeholder,.nt-area::placeholder{color:#2e6b45}
+  .nt-area{height:70px;resize:none;line-height:1.5;font-family:'Share Tech Mono',ui-monospace,monospace}
+  .nt-hint{font-size:12px;color:var(--muted);line-height:1.6;margin:6px 0 20px;border-left:2px solid var(--line);padding-left:12px}
+  .nt-hint b{color:var(--green);font-weight:400}
   .flabel{font-size:12px;color:var(--green);letter-spacing:1.5px;margin:0 0 8px;
     text-shadow:0 0 6px rgba(34,160,86,.35)}
 
@@ -311,15 +323,9 @@
         </nav>
         <div class="workspace">
 
+          <!-- ГЛАВНАЯ = ПРЕДПРОВЕРКА (живые проверки слов/цифр/языков) -->
           <section class="pane" data-pane="home">
-            <div class="home-idle">
-              <div class="home-emblem">П</div>
-              <div class="home-title">ПУХ · ROBCO TERMINAL</div>
-              <div class="home-hint">// выбери действие в меню сверху&nbsp;<span class="blink"></span></div>
-            </div>
-          </section>
-
-          <section class="pane hidden" data-pane="new">
+            <div class="flabel" style="font-size:14px;margin-bottom:16px">&gt; ПРЕДПРОВЕРКА · быстрая проверка слов и цифр</div>
             <div class="field">
               <div class="flabel">&gt; СТРОКА 1 — СЛОВА (СИД-ФРАЗА) · живая проверка</div>
               <div class="editor">
@@ -328,7 +334,6 @@
               </div>
               <div class="vstatus muted" id="st-words">введите слова сид-фразы</div>
             </div>
-
             <div class="field">
               <div class="flabel">&gt; СТРОКА 2 — ЦИФРОВОЙ КОД (ИНДЕКСЫ) · сверка со словами</div>
               <div class="editor">
@@ -338,17 +343,25 @@
               <div class="vstatus muted" id="st-nums"></div>
             </div>
             <div class="vstatus muted" id="st-cross"></div>
-
-            <!-- БАЗОВАЯ ПРОВЕРКА 3: языковой подбор (всегда включён, как строки 1 и 2) -->
             <div class="lang-scan hidden" id="lang-scan"></div>
+          </section>
 
-            <div class="toggles">
-              <div class="flabel">&gt; РЕЖИМЫ ЗАДАНИЯ (скоро)</div>
-              <label class="toggle"><input type="checkbox" id="tg-podbor"><span class="sw"></span><span class="tg-name">ПОДБОР</span></label>
-              <label class="toggle"><input type="checkbox" id="tg-monitor"><span class="sw"></span><span class="tg-name">МОНИТОРИНГ</span></label>
+          <!-- НОВОЕ ЗАДАНИЕ = имя + 2 строки + запуск перебора -->
+          <section class="pane hidden" data-pane="new">
+            <div class="field">
+              <div class="flabel">&gt; ИМЯ ЗАДАНИЯ</div>
+              <input class="nt-input" id="nt-name" autocomplete="off" placeholder="например: Кошелёк Иванова">
             </div>
-
-            <button class="btn-start" id="btn-start">▶ НАЧАТЬ ЗАДАНИЕ</button>
+            <div class="field">
+              <div class="flabel">&gt; СЛОВА (СИД-ФРАЗА)</div>
+              <textarea class="nt-area" id="nt-words" spellcheck="false" autocomplete="off" placeholder="слова через пробел (если есть)"></textarea>
+            </div>
+            <div class="field">
+              <div class="flabel">&gt; ЦИФРОВОЙ КОД (ИНДЕКСЫ)</div>
+              <textarea class="nt-area" id="nt-nums" spellcheck="false" autocomplete="off" placeholder="числа через пробел (если есть)"></textarea>
+            </div>
+            <div class="nt-hint">Запуск начнёт <b>логичный перебор</b>: числовой якорь → подбор валидного слова → перевод в цифры → сверка по языкам. Демо-лимит <b>10 млн попыток/сутки</b> на сид. Результаты копятся в базе задания.</div>
+            <button class="btn-start" id="btn-start">▶ НАЧАТЬ ПЕРЕБОР</button>
           </section>
 
           <section class="pane hidden" data-pane="edit">
@@ -385,6 +398,7 @@
   <script src="/static/bip39.js"></script>
   <script src="/static/bip39_langs.js"></script>
   <script src="/static/checker.js"></script>
+  <script src="/static/recover.js"></script>
   <script src="/static/tasks.js"></script>
   <script>
     function selTab(el){

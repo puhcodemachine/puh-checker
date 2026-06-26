@@ -135,14 +135,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._json({"error": "пустое задание"}, 400)
         tid = secrets.token_hex(3)
         wcount = len(re.findall(r"[A-Za-z]+", words))
-        if words:
-            name, ttype = "SEED-" + tid.upper()[:4], (f"сид-фраза · {wcount} слов" if wcount else "сид-фраза")
-        else:
-            name, ttype = "CODE-" + tid.upper()[:4], "цифровой код"
+        gen = ("SEED-" if words else "CODE-") + tid.upper()[:4]
+        name = (body.get("name") or "").strip() or gen
+        ttype = (f"сид-фраза · {wcount} слов" if wcount else "сид-фраза") if words else "цифровой код"
         now = time.time()
         task = {"id": tid, "name": name, "type": ttype, "status": "green",
-                "modes": {"podbor": bool(body.get("podbor")), "monitor": bool(body.get("monitor"))},
-                "words": words, "nums": nums, "created": now, "started": now, "results": []}
+                "modes": {"podbor": True, "monitor": bool(body.get("monitor"))},
+                "words": words, "nums": nums, "created": now, "started": now,
+                "results": [], "log": []}
         with LOCK:
             tasks = load_tasks()
             tasks.append(task)
@@ -192,6 +192,26 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     if t["id"] == m.group(1):
                         t["status"] = "red"
                         t["stopped"] = time.time()
+                        save_tasks(tasks)
+                        return self._json({"ok": True, "task": task_summary(t)})
+            return self._json({"error": "not found"}, 404)
+        m = re.match(r"^/api/tasks/([0-9a-f]+)/update$", path)
+        if m:
+            if not self._user():
+                return self._json({"error": "auth"}, 401)
+            n = int(self.headers.get("Content-Length", 0))
+            try:
+                patch = json.loads(self.rfile.read(n) or b"{}")
+            except json.JSONDecodeError:
+                return self._json({"error": "bad json"}, 400)
+            allowed = ("status", "results", "log", "attempts", "done", "stopped")
+            with LOCK:
+                tasks = load_tasks()
+                for t in tasks:
+                    if t["id"] == m.group(1):
+                        for k in allowed:
+                            if k in patch:
+                                t[k] = patch[k]
                         save_tasks(tasks)
                         return self._json({"ok": True, "task": task_summary(t)})
             return self._json({"error": "not found"}, 404)
