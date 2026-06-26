@@ -94,10 +94,11 @@
 
   // ---------- фоновый скан задачи ----------
   function scanLoop(id) {
+    if (running[id]) return;            // один цикл на задачу — без дублей
     var t = byId(id); if (!t || !window.PUHPATHS) return;
+    running[id] = true;
     var rows = window.PUHPATHS.matrix(); rows.forEach(function (r) { r.addr = window.PUHPATHS.deriveOne(r, t.seed); });
     if (curId === id) lastRows = rows;
-    running[id] = true;
     var prev = (byId(id) || {}).results || [];
     var i = 0;
     function step() {
@@ -132,8 +133,15 @@
     $("seed-status").className = "vstatus green"; $("seed-status").textContent = "✓ валидна — задача запущена, идёт фоновая проверка";
     var all = load(), now = nowSec();
     var name = ($("name").value || "").trim() || "Проверка " + (onlyA(all).length + 1);
-    curId = Math.random().toString(16).slice(2, 8);
-    all.push({ id: curId, name: name, mode: "A", type: "проверка активности · 45 путей", status: "running", seed: seed, words: seed, results: [], alive: 0, created: now, started: now, lastCheck: null, changed: false, progress: "0/45", log: [{ ts: now, msg: "проверка активности запущена" }] });
+    var existing = onlyA(all).filter(function (t) { return t.seed === seed; })[0];   // дедуп по сиду
+    if (existing) {
+      curId = existing.id;
+      if (running[curId]) { window.maOpen(curId); return; }   // уже идёт — открыть, не дублировать
+      all.forEach(function (t) { if (t.id === curId) { t.name = name; t.status = "running"; t.results = []; t.alive = 0; t.progress = "0/45"; t.started = now; t.lastCheck = null; t.log = (t.log || []).concat([{ ts: now, msg: "перезапуск проверки" }]); } });
+    } else {
+      curId = Math.random().toString(16).slice(2, 8);
+      all.push({ id: curId, name: name, mode: "A", type: "проверка активности · 45 путей", status: "running", seed: seed, words: seed, results: [], alive: 0, created: now, started: now, lastCheck: null, changed: false, progress: "0/45", log: [{ ts: now, msg: "проверка активности запущена" }] });
+    }
     save(all);
     lastRows = null; $("report").innerHTML = ""; $("summary").innerHTML = "";
     var btn = $("run"); btn.disabled = true; btn.textContent = "⏳ ИДЁТ В ФОНЕ…";
@@ -175,13 +183,21 @@
     });
   }
   function resumeRunning() { onlyA(load()).forEach(function (t) { if (t.status === "running" && !running[t.id]) scanLoop(t.id); }); }
+  function dedupeStore() {
+    var all = load(), seen = {}, out = [], changed = false;
+    all.forEach(function (t) {
+      if (t.mode === "A" && !t.deleted) { var k = t.seed || t.id; if (seen[k]) { changed = true; return; } seen[k] = 1; }
+      out.push(t);
+    });
+    if (changed) save(out);
+  }
 
   document.addEventListener("DOMContentLoaded", function () {
     var ta = $("seed");
     ta.addEventListener("input", function () { var C = window.PUHCORE; if (!C) return; var el = $("seed-status"); if (!ta.value.trim()) { el.className = "vstatus muted"; el.textContent = "введите сид-фразу"; return; } var v = C.validateWords((ta.value || "").trim().toLowerCase()); el.className = "vstatus " + v.level; el.textContent = v.msg; });
     $("run").addEventListener("click", startCheck);
     $("close-task").addEventListener("click", saveAndContinue);
-    renderTaskList(); resumeRunning(); dueCheck();
+    dedupeStore(); renderTaskList(); resumeRunning(); dueCheck();
     // открыть конкретную задачу по ?open=id (из панели «редактировать»)
     var mq = location.search.match(/[?&]open=([0-9a-f]+)/);
     if (mq) window.maOpen(mq[1]);

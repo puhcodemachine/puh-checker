@@ -175,6 +175,7 @@
   }
   function render(tasks) {
     tasks = (tasks || []).filter(function (t) { return !t.deleted; });  // удалённые не показываем
+    var seen = {}; tasks = tasks.filter(function (t) { if (seen[t.id]) return false; seen[t.id] = 1; return true; });  // без дублей
     var list = $("task-list"), cnt = $("task-count");
     if (cnt) cnt.textContent = "[ " + tasks.length + " ]";
     tasks.forEach(function (t) {
