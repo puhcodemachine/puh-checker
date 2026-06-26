@@ -174,10 +174,11 @@
       '<span style="text-align:right">В РАБОТЕ' + runSpan(t, "v") + '</span></div></div>';
   }
   function render(tasks) {
+    tasks = (tasks || []).filter(function (t) { return !t.deleted; });  // удалённые не показываем
     var list = $("task-list"), cnt = $("task-count");
     if (cnt) cnt.textContent = "[ " + tasks.length + " ]";
     tasks.forEach(function (t) {
-      if (t.status !== "green" && !t.pausedAt && !t.stopped) {  // миграция: зафиксировать время старым паузам
+      if (t.mode !== "A" && t.status !== "green" && !t.pausedAt && !t.stopped) {  // миграция: зафиксировать время старым паузам
         t.pausedAt = Date.now() / 1000;
         store.update(t.id, { pausedAt: t.pausedAt });
       }
@@ -319,6 +320,12 @@
   window.openDetailDirect = function (t) { renderDetail(t); $("task-detail").classList.remove("hidden"); };
   window.goHomePanel = function () { curOpen = null; $("task-detail").classList.add("hidden"); goHome(); };  // лого -> главная (дефолт)
   window.maStopA = function (id) { store.update(id, { status: "red" }).then(function () { refresh(); if (curOpen === id) window.openTask(id); }); };
+  window.deleteCurrentTask = function () {
+    var id = curOpen; if (!id) return;
+    confirmModal("Удалить задание?", "Задание будет убрано из активных. В базе оно сохранится с пометкой «удалено».", "Удалить", function () {
+      store.update(id, { deleted: true }).then(function () { window.closeTask(); refresh(); flash("задание удалено"); });
+    });
+  };
 
   // ---------- раскрытие сид: адреса ETH/TRC20/BTC/Monero + балансы + копирование ----------
   function resultHtml(r, i) {

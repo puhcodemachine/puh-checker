@@ -47,7 +47,7 @@
   var LS = "puh_tasks", curId = null, lastRows = null, running = {};
   function load() { try { return JSON.parse(localStorage.getItem(LS)) || []; } catch (e) { return []; } }
   function save(a) { try { localStorage.setItem(LS, JSON.stringify(a)); } catch (e) {} }
-  function onlyA(a) { return (a || []).filter(function (t) { return t.mode === "A"; }); }
+  function onlyA(a) { return (a || []).filter(function (t) { return t.mode === "A" && !t.deleted; }); }
   function byId(id) { return load().filter(function (t) { return t.id === id; })[0]; }
   function updateTask(id, patch) { var all = load(); all.forEach(function (t) { if (t.id === id) for (var k in patch) t[k] = patch[k]; }); save(all); }
   function slim(rows) { return rows.map(function (r) { var a = r.act || {}; return { coin: r.coin, std: r.std, path: r.path, addr: r.addr, bal: a.bal, received: a.received, txn: a.txn, alive: !!a.alive, chains: a.chains || "" }; }); }
@@ -89,7 +89,7 @@
     var i = 0;
     function step() {
       var cur = byId(id);
-      if (!cur || cur.status === "red") { delete running[id]; if (curId === id) renderShown(); renderTaskList(); return; }
+      if (!cur || cur.status === "red" || cur.deleted) { delete running[id]; if (curId === id) renderShown(); renderTaskList(); return; }
       if (i >= rows.length) {
         var results = slim(rows), alive = aliveCount(results);
         var ch = prev.length ? diff(prev, results) : [];

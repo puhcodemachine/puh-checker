@@ -76,6 +76,10 @@
     font-family:inherit;font-size:13px;letter-spacing:1px;transition:.1s}
   .td-stop:hover{background:var(--red);color:#1a0606;box-shadow:0 0 14px rgba(232,90,90,.4)}
   .td-stop.hidden{display:none}
+  .td-bar-right{display:flex;align-items:center;gap:12px}
+  .td-del{background:transparent;border:1px solid var(--red);color:var(--red);padding:8px 16px;cursor:pointer;
+    font-family:inherit;font-size:13px;letter-spacing:1px;transition:.1s}
+  .td-del:hover{background:var(--red);color:#1a0606;box-shadow:0 0 14px rgba(232,90,90,.4)}
   .td-back{background:transparent;border:1px solid var(--line);color:var(--green);padding:8px 16px;cursor:pointer;
     font-family:inherit;font-size:13px;letter-spacing:1px;transition:.1s}
   .td-back:hover{border-color:var(--green);background:var(--green);color:#04130a}
@@ -440,7 +444,10 @@
             <button class="td-back" onclick="closeTask()">← НА ГЛАВНУЮ</button>
             <div class="td-title"><span id="td-name">—</span><span class="lamp" id="td-lamp"></span></div>
           </div>
-          <button class="td-stop hidden" id="td-stop">⏸ ОСТАНОВИТЬ ЗАДАНИЕ</button>
+          <div class="td-bar-right">
+            <button class="td-stop hidden" id="td-stop">⏸ ОСТАНОВИТЬ ЗАДАНИЕ</button>
+            <button class="td-del" id="td-del" onclick="deleteCurrentTask()">🗑 УДАЛИТЬ ЗАДАЧУ</button>
+          </div>
         </div>
         <div class="td-body"><div class="inner" id="td-inner"></div></div>
       </section>
