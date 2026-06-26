@@ -203,6 +203,17 @@
     });
   };
 
+  function explorerUrl(coin, chains, addr) {
+    var c = (chains || "").split(",")[0].trim();
+    if (coin === "BTC") return "https://blockstream.info/address/" + addr;
+    if (coin === "LTC") return "https://blockchair.com/litecoin/address/" + addr;
+    if (coin === "DOGE") return "https://blockchair.com/dogecoin/address/" + addr;
+    if (coin === "DASH") return "https://blockchair.com/dash/address/" + addr;
+    if (coin === "ETC") return "https://etc.blockscout.com/address/" + addr;
+    if (c === "BSC") return "https://bscscan.com/address/" + addr;
+    if (c === "Polygon") return "https://polygonscan.com/address/" + addr;
+    return "https://etherscan.io/address/" + addr;
+  }
   function renderAddrReport(results) {
     var coins = ["BTC", "LTC", "DOGE", "DASH", "ETH", "ETC"], html = "";
     coins.forEach(function (coin) {
@@ -211,7 +222,9 @@
       html += '<div class="net-group"><div class="net-h">' + coin + "</div>";
       rs.forEach(function (r) {
         var al = r.alive;
-        var flag = al ? "● ЖИВОЙ" + (r.chains ? " [" + esc(r.chains) + "]" : "") + (r.txn ? " тx" + r.txn : "") : "пусто";
+        var flag = al
+          ? '<a href="' + explorerUrl(r.coin, r.chains, r.addr) + '" target="_blank" rel="noopener" class="tx-link">● ЖИВОЙ' + (r.chains ? " [" + esc(r.chains) + "]" : "") + (r.txn ? " тx" + r.txn : "") + " ↗</a>"
+          : "пусто";
         html += '<div class="addr-row' + (al ? " alive" : "") + '">' +
           '<span class="ar-std">' + esc(r.std) + '<br><span style="opacity:.6">' + esc(r.path) + "</span></span>" +
           '<span class="ar-addr">' + esc(r.addr || "—") + "</span>" +

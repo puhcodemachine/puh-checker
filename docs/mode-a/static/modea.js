@@ -9,6 +9,17 @@
   function pad(n) { return (n < 10 ? "0" : "") + n; }
   function nowSec() { return Date.now() / 1000; }
   function fmtDT(ts) { var d = new Date(ts * 1000); return pad(d.getDate()) + "." + pad(d.getMonth() + 1) + " " + pad(d.getHours()) + ":" + pad(d.getMinutes()); }
+  function explorerUrl(coin, chains, addr) {
+    var c = (chains || "").split(",")[0].trim();
+    if (coin === "BTC") return "https://blockstream.info/address/" + addr;
+    if (coin === "LTC") return "https://blockchair.com/litecoin/address/" + addr;
+    if (coin === "DOGE") return "https://blockchair.com/dogecoin/address/" + addr;
+    if (coin === "DASH") return "https://blockchair.com/dash/address/" + addr;
+    if (coin === "ETC") return "https://etc.blockscout.com/address/" + addr;
+    if (c === "BSC") return "https://bscscan.com/address/" + addr;
+    if (c === "Polygon") return "https://polygonscan.com/address/" + addr;
+    return "https://etherscan.io/address/" + addr;
+  }
 
   // ---------- активность ----------
   function blockchair(chain, addr) {
@@ -34,7 +45,9 @@
       rs.forEach(function (r) {
         var a = r.act || {}, alive = a.alive;
         var balTxt = a.bal == null ? "…" : esc(a.bal) + (a.received && a.received !== "—" && a.received !== a.bal ? " (получено " + esc(a.received) + ")" : "");
-        var flag = a.bal == null ? "…" : alive ? "● ЖИВОЙ" + (a.chains ? " [" + esc(a.chains) + "]" : "") + (a.txn ? " тx" + a.txn : "") : "пусто";
+        var flag = a.bal == null ? "…" : alive
+          ? '<a href="' + explorerUrl(r.coin, a.chains, r.addr) + '" target="_blank" rel="noopener" class="tx-link">● ЖИВОЙ' + (a.chains ? " [" + esc(a.chains) + "]" : "") + (a.txn ? " тx" + a.txn : "") + " ↗</a>"
+          : "пусто";
         html += '<div class="addr-row' + (alive ? " alive" : "") + '"><span class="ar-std">' + esc(r.std) + '<br><span style="opacity:.6">' + esc(r.path) + "</span></span>" +
           '<span class="ar-addr">' + (r.addr ? esc(r.addr) : "—") + '</span><span class="ar-bal">' + balTxt + '</span><span class="ar-flag ' + (a.bal == null ? "empty" : alive ? "alive" : "empty") + '">' + flag + "</span></div>";
       });
