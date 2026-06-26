@@ -93,12 +93,13 @@
     // dedup по фразе
     var seen = {}, uniq = [];
     res.forEach(function (r) { if (r.phrase && !seen[r.phrase]) { seen[r.phrase] = 1; uniq.push(r); } });
-    var status = uniq.length ? "amber" : "green";
     log.push({ ts: nowSec(), msg: uniq.length
-      ? "ИТОГ: найдено валидных фраз: " + uniq.length + " → требуется проверка (жёлтый сигнал)"
+      ? "ИТОГ: найдено валидных фраз: " + uniq.length + " → ПАУЗА, требуется проверка (жёлтый сигнал)"
       : "ИТОГ: на 1-м уровне совпадений нет — нужен более глубокий перебор (2+ ошибки)" });
-    return store.update(taskId, { status: status, results: uniq, log: log, done: true })
-      .then(function () { refresh(); });
+    var patch = { results: uniq, log: log, done: true };
+    if (uniq.length) { patch.status = "amber"; patch.pausedAt = nowSec(); }  // пауза + заморозка таймера
+    else { patch.status = "green"; }
+    return store.update(taskId, patch).then(function () { refresh(); });
   }
   window.runPereborDemo = runPerebor;
 
@@ -109,9 +110,10 @@
     return { lamp: "red", cls: "red", txt: "■ ОСТАНОВЛЕНО" };
   }
   function runSpan(t, cls) {
-    if (t.status !== "red")  // green/amber — идёт/найдено: тикаем живое время
+    if (t.status === "green")  // только зелёное тикает; пауза/стоп — замороженное время
       return '<span class="' + cls + ' t-run" data-started="' + t.started + '">' + dur(Date.now() / 1000 - t.started) + "</span>";
-    return '<span class="' + cls + ' t-run">' + (t.stopped ? dur(t.stopped - t.started) : "--:--:--") + "</span>";
+    var f = t.stopped || t.pausedAt;
+    return '<span class="' + cls + ' t-run">' + (f ? dur(f - t.started) : "--:--:--") + "</span>";
   }
   function cardHtml(t) {
     var si = statusInfo(t.status);
@@ -148,13 +150,8 @@
     h += '<div class="td-sec"><div class="td-h">РЕЖИМЫ РАБОТЫ</div><div class="td-chips">' +
       '<span class="td-chip ' + (m.podbor ? "on" : "") + '">ПОДБОР · ' + (m.podbor ? "ВКЛ" : "выкл") + "</span>" +
       '<span class="td-chip ' + (m.monitor ? "on" : "") + '">МОНИТОРИНГ · ' + (m.monitor ? "ВКЛ" : "выкл") + "</span></div></div>";
-    h += '<div class="td-sec"><div class="td-h">РЕЗУЛЬТАТЫ — ВАЛИДНЫЕ ФРАЗЫ (' + res.length + ")</div>";
-    h += res.length
-      ? res.map(function (r) {
-          return '<div class="td-res-row"><span class="ts">' + fmtDateTime(r.ts) +
-            '</span><span><div class="rphrase">' + esc(r.phrase) + '</div><div class="rreason">' + esc(r.reason || r.stage || "") + "</div></span></div>";
-        }).join("")
-      : '<div class="td-empty">валидных фраз пока нет</div>';
+    h += '<div class="td-sec"><div class="td-h">РЕЗУЛЬТАТЫ — ВАЛИДНЫЕ ФРАЗЫ (' + res.length + ") · нажми на фразу → адреса и балансы</div>";
+    h += res.length ? res.map(resultHtml).join("") : '<div class="td-empty">валидных фраз пока нет</div>';
     h += "</div>";
 
     var lg = t.log || [];
@@ -199,6 +196,55 @@
   };
   window.closeTask = function () { $("task-detail").classList.add("hidden"); };
   window.openDetailDirect = function (t) { renderDetail(t); $("task-detail").classList.remove("hidden"); };
+  window.goHomePanel = function () { $("task-detail").classList.add("hidden"); goHome(); };  // лого -> главная (дефолт)
+
+  // ---------- раскрытие сид: адреса ETH/TRC20/BTC/Monero + балансы + копирование ----------
+  function resultHtml(r) {
+    var ph = esc(r.phrase);
+    return '<div class="res">' +
+      '<div class="res-head" onclick="toggleRes(this)">' +
+        '<span class="ts">' + fmtDateTime(r.ts) + '</span>' +
+        '<div class="res-mid"><div class="rphrase">' + ph + '</div><div class="rreason">' + esc(r.reason || r.stage || "") + '</div></div>' +
+        '<span class="res-caret">▾</span></div>' +
+      '<div class="res-body hidden" data-phrase="' + ph + '" data-loaded="0"></div></div>';
+  }
+  function fillAddresses(body) {
+    var phrase = body.getAttribute("data-phrase");
+    var copyAll = '<div class="addr-copyall"><button class="copy-btn" data-copy="' + esc(phrase) + '" onclick="copyEl(this)">⧉ КОПИРОВАТЬ СИД</button></div>';
+    var addrs = window.PUHDERIVE ? window.PUHDERIVE.addresses(phrase) : null;
+    if (!addrs) { body.innerHTML = copyAll + '<div class="td-empty">не удалось вывести адреса</div>'; return; }
+    function row(label, addr, net) {
+      if (!addr) return '<div class="addr-row"><span class="addr-net">' + label + '</span>' +
+        '<span class="addr-val muted">вывод на сервере (нестандартно для BIP39)</span><span class="addr-bal"></span><span></span></div>';
+      return '<div class="addr-row"><span class="addr-net">' + label + '</span>' +
+        '<span class="addr-val">' + esc(addr) + '</span>' +
+        '<span class="addr-bal" data-net="' + net + '">…</span>' +
+        '<button class="copy-btn" data-copy="' + esc(addr) + '" onclick="copyEl(this)">⧉</button></div>';
+    }
+    body.innerHTML = copyAll +
+      row("ETH", addrs.eth, "eth") + row("TRC20", addrs.trx, "trx") +
+      row("BITCOIN", addrs.btc, "btc") + row("MONERO", addrs.xmr, "xmr");
+    var D = window.PUHDERIVE;
+    function setBal(net, v) { var el = body.querySelector('.addr-bal[data-net="' + net + '"]'); if (el) el.textContent = v; }
+    if (addrs.eth) D.ethBalance(addrs.eth).then(function (v) { setBal("eth", v); });
+    if (addrs.trx) D.trxBalance(addrs.trx).then(function (v) { setBal("trx", v); });
+    if (addrs.btc) D.btcBalance(addrs.btc).then(function (v) { setBal("btc", v); });
+  }
+  window.toggleRes = function (head) {
+    var body = head.nextElementSibling;
+    var nowHidden = body.classList.toggle("hidden");
+    head.querySelector(".res-caret").textContent = nowHidden ? "▾" : "▴";
+    if (!nowHidden && body.getAttribute("data-loaded") === "0") {
+      body.setAttribute("data-loaded", "1");
+      fillAddresses(body);
+    }
+  };
+  window.copyEl = function (btn) {
+    var t = btn.getAttribute("data-copy");
+    try { if (navigator.clipboard) navigator.clipboard.writeText(t); } catch (e) {}
+    var o = btn.textContent; btn.textContent = "✓"; setTimeout(function () { btn.textContent = o; }, 1100);
+    flash("скопировано");
+  };
 
   function goHome() {
     document.querySelectorAll(".tab").forEach(function (t) { t.classList.remove("active"); });

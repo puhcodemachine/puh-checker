@@ -107,6 +107,28 @@
     border-bottom:1px dotted var(--line);color:var(--txt)}
   .td-log-row .ts{color:var(--muted)}
 
+  /* раскрывающийся результат с адресами и балансами */
+  .res{border-left:2px solid var(--amber);background:rgba(232,183,58,.05);margin-bottom:5px}
+  .res-head{display:grid;grid-template-columns:175px 1fr 20px;gap:14px;align-items:center;padding:9px 12px;cursor:pointer}
+  .res-head:hover{background:rgba(232,183,58,.07)}
+  .res-head .ts{color:var(--muted);font-size:12px}
+  .res-mid .rphrase{color:#3fcf72;font-size:14px;word-break:break-word;letter-spacing:.5px}
+  .res-mid .rreason{color:var(--muted);font-size:11px;margin-top:3px}
+  .res-caret{color:var(--amber);text-align:center}
+  .res-body{padding:8px 12px 12px;border-top:1px dashed var(--line)}
+  .res-body.hidden{display:none}
+  .addr-copyall{margin:4px 0 12px}
+  .addr-row{display:grid;grid-template-columns:90px 1fr 160px 34px;gap:12px;align-items:center;padding:7px 0;
+    border-bottom:1px dotted var(--line);font-size:13px}
+  .addr-net{color:var(--green);letter-spacing:1px;font-size:12px}
+  .addr-val{color:var(--txt);word-break:break-all;font-size:12.5px}
+  .addr-val.muted{color:var(--muted)}
+  .addr-bal{color:var(--amber);font-size:12px;text-align:right}
+  .copy-btn{background:transparent;border:1px solid var(--line);color:var(--green);cursor:pointer;
+    font-family:inherit;font-size:12px;padding:5px 9px;transition:.1s}
+  .copy-btn:hover{border-color:var(--green);background:var(--green);color:#04130a}
+  .addr-copyall .copy-btn{padding:7px 14px;letter-spacing:1px}
+
   /* ЛЕВАЯ ПАНЕЛЬ ЗАДАНИЙ */
   .sidebar{width:360px;flex-shrink:0;border-right:1px solid var(--green-dim);
     display:flex;flex-direction:column;min-height:0;background:linear-gradient(180deg,rgba(34,160,86,.03),transparent)}
@@ -280,7 +302,7 @@
 <body>
   <div class="frame">
     <div class="topbar">
-      <a href="/" class="brand-logo" title="На главную панели">
+      <a href="javascript:void(0)" class="brand-logo" title="На главную панели" onclick="goHomePanel()">
         <span class="emblem">П</span>
         <span class="brand-txt">ПУХ<i>·ROBCO</i></span>
         <span class="brand-tag">TERMLINK</span>
@@ -399,6 +421,8 @@
   <script src="static/bip39_langs.js"></script>
   <script src="static/checker.js"></script>
   <script src="static/recover.js"></script>
+  <script src="static/vendor/ethers.umd.min.js"></script>
+  <script src="static/derive.js"></script>
   <script src="static/tasks.js"></script>
   <script>
     function selTab(el){

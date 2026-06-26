@@ -6,7 +6,8 @@ set -e
 cd "$(dirname "$0")"
 rm -rf docs
 mkdir -p docs/static
-cp static/bip39.js static/bip39_langs.js static/checker.js static/recover.js static/tasks.js docs/static/
+cp static/bip39.js static/bip39_langs.js static/checker.js static/recover.js static/derive.js static/tasks.js docs/static/
+cp -r static/vendor docs/static/vendor
 sed -e 's#src="/static/#src="static/#g' -e 's/{{USER}}/ПУХ/g' templates/panel.html > docs/index.html
 touch docs/.nojekyll
 

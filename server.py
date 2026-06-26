@@ -53,7 +53,8 @@ def save_tasks(tasks):
 def task_summary(t):
     return {"id": t["id"], "name": t["name"], "type": t["type"], "status": t["status"],
             "modes": t["modes"], "created": t["created"], "started": t["started"],
-            "stopped": t.get("stopped"), "results": len(t.get("results", []))}
+            "stopped": t.get("stopped"), "pausedAt": t.get("pausedAt"),
+            "results": len(t.get("results", []))}
 
 
 def verify(user, pw):
@@ -204,7 +205,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 patch = json.loads(self.rfile.read(n) or b"{}")
             except json.JSONDecodeError:
                 return self._json({"error": "bad json"}, 400)
-            allowed = ("status", "results", "log", "attempts", "done", "stopped")
+            allowed = ("status", "results", "log", "attempts", "done", "stopped", "pausedAt")
             with LOCK:
                 tasks = load_tasks()
                 for t in tasks:
