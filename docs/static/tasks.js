@@ -138,6 +138,20 @@
   function refresh() { store.list().then(render); }
   window.refreshTasks = refresh;
   window.renderTasksDirect = render;
+  window.renderDB = function () {
+    store.list().then(function (tasks) {
+      var el = $("db-list"); if (!el) return;
+      if (!tasks.length) { el.innerHTML = '<div class="td-empty">база пуста — создай задание</div>'; return; }
+      el.innerHTML = tasks.map(function (t) {
+        var si = statusInfo(t.status);
+        return '<div class="db-row" onclick="openTask(\'' + t.id + '\')">' +
+          '<span class="db-lamp lamp ' + si.lamp + '"></span>' +
+          '<span class="db-name">' + esc(t.name) + '</span>' +
+          '<span class="db-meta">' + (t.results || 0) + ' сид · ' + si.txt + '</span>' +
+          '<span class="db-caret">→</span></div>';
+      }).join("");
+    });
+  };
 
   function renderDetail(t) {
     var si = statusInfo(t.status), m = t.modes || {}, res = t.results || [];

@@ -137,6 +137,16 @@
     font-family:inherit;font-size:14px;font-weight:700;letter-spacing:1.5px;cursor:pointer;transition:.12s}
   .btn-continue:hover{background:var(--amber);color:#1a1406;box-shadow:0 0 16px rgba(232,183,58,.35)}
 
+  /* база данных — список заданий строками */
+  .db-list{display:flex;flex-direction:column;gap:6px;max-width:920px}
+  .db-row{display:grid;grid-template-columns:14px 1fr auto 20px;gap:14px;align-items:center;
+    padding:12px 14px;border:1px solid var(--line);background:var(--panel);cursor:pointer;transition:.12s}
+  .db-row:hover{border-color:var(--green);box-shadow:0 0 12px rgba(34,160,86,.15);transform:translateX(2px)}
+  .db-lamp{width:11px;height:11px}
+  .db-name{color:var(--green);font-size:15px;letter-spacing:.5px}
+  .db-meta{color:var(--muted);font-size:12px}
+  .db-caret{color:var(--green);text-align:center}
+
   /* ЛЕВАЯ ПАНЕЛЬ ЗАДАНИЙ */
   .sidebar{width:360px;flex-shrink:0;border-right:1px solid var(--green-dim);
     display:flex;flex-direction:column;min-height:0;background:linear-gradient(180deg,rgba(34,160,86,.03),transparent)}
@@ -350,6 +360,7 @@
         <nav class="topnav">
           <div class="tab" data-target="new" onclick="selTab(this)"><span class="ico">＋</span>НОВОЕ ЗАДАНИЕ</div>
           <div class="tab" data-target="edit" onclick="selTab(this)"><span class="ico">✎</span>ИЗМЕНИТЬ ЗАДАНИЕ</div>
+          <div class="tab" data-target="db" onclick="selTab(this)"><span class="ico">▦</span>БАЗА ДАННЫХ</div>
         </nav>
         <div class="workspace">
 
@@ -398,6 +409,11 @@
             <div class="placeholder">[ ИЗМЕНИТЬ ЗАДАНИЕ — раздел в разработке ]</div>
           </section>
 
+          <section class="pane hidden" data-pane="db">
+            <div class="flabel" style="font-size:14px;margin-bottom:14px">&gt; БАЗА ДАННЫХ · все задания (клик → полная история и все сид)</div>
+            <div id="db-list" class="db-list"></div>
+          </section>
+
         </div>
       </main>
 
@@ -440,6 +456,7 @@
       document.querySelectorAll('.pane').forEach(function(p){
         p.classList.toggle('hidden', p.getAttribute('data-pane') !== t);
       });
+      if (t === 'db' && window.renderDB) window.renderDB();
     }
   </script>
 
