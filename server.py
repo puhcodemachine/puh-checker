@@ -54,6 +54,8 @@ def task_summary(t):
     return {"id": t["id"], "name": t["name"], "type": t["type"], "status": t["status"],
             "modes": t["modes"], "created": t["created"], "started": t["started"],
             "stopped": t.get("stopped"), "pausedAt": t.get("pausedAt"),
+            "mode": t.get("mode", "B"), "alive": t.get("alive", 0), "lastCheck": t.get("lastCheck"),
+            "progress": t.get("progress"), "deleted": t.get("deleted"),
             "results": len(t.get("results", []))}
 
 

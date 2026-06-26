@@ -48,8 +48,8 @@
   function lsSummary(t) {
     return { id: t.id, name: t.name, type: t.type, status: t.status, modes: t.modes,
              created: t.created, started: t.started, stopped: t.stopped, pausedAt: t.pausedAt,
-             mode: t.mode || "B", alive: t.alive || 0, lastCheck: t.lastCheck,
-             results: (t.results || []).length };
+             mode: t.mode || "B", alive: t.alive || 0, lastCheck: t.lastCheck, progress: t.progress,
+             deleted: t.deleted, results: (t.results || []).length };
   }
   function lsCreate(p) {
     var words = (p.words || "").trim(), nums = (p.nums || "").trim();
