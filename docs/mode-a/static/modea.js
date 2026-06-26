@@ -88,10 +88,11 @@
     });
   }
 
-  // ---------- задачи (localStorage) ----------
-  var LS = "puh_modea_tasks", curId = null, lastRows = null;
+  // ---------- задачи (ОБЩЕЕ хранилище с панелью: puh_tasks, mode:"A") ----------
+  var LS = "puh_tasks", curId = null, lastRows = null;
   function load() { try { return JSON.parse(localStorage.getItem(LS)) || []; } catch (e) { return []; } }
   function save(a) { try { localStorage.setItem(LS, JSON.stringify(a)); } catch (e) {} }
+  function onlyA(arr) { return (arr || []).filter(function (t) { return t.mode === "A"; }); }
   function slim(rows) { return rows.map(function (r) { var a = r.act || {}; return { coin: r.coin, std: r.std, path: r.path, addr: r.addr, bal: a.bal, received: a.received, txn: a.txn, alive: !!a.alive, chains: a.chains || "" }; }); }
   function fatten(results) { return results.map(function (r) { return { coin: r.coin, std: r.std, path: r.path, addr: r.addr, act: { bal: r.bal, received: r.received, txn: r.txn, alive: r.alive, chains: r.chains } }; }); }
   function diff(oldR, newR) {
@@ -101,7 +102,7 @@
   }
 
   function renderTaskList() {
-    var tasks = load(), wrap = $("tasks-wrap"), el = $("task-list");
+    var tasks = onlyA(load()), wrap = $("tasks-wrap"), el = $("task-list");
     if (!tasks.length) { wrap.classList.add("hidden"); return; }
     wrap.classList.remove("hidden");
     el.innerHTML = tasks.map(function (t) {
@@ -118,14 +119,25 @@
 
   function saveCurrent() {
     if (!lastRows) return;
-    var tasks = load();
-    var name = ($("name").value || "").trim() || "Задача " + (tasks.length + 1);
+    var all = load();
+    var name = ($("name").value || "").trim() || "Проверка " + (onlyA(all).length + 1);
     var seed = ($("seed").value || "").trim().toLowerCase().replace(/\s+/g, " ");
-    var results = slim(lastRows);
+    var results = slim(lastRows), alive = aliveCount(results), now = nowSec();
+    var ttype = "проверка активности · " + results.length + " путей";
     var found = false;
-    tasks.forEach(function (t) { if (t.id === curId) { t.name = name; t.seed = seed; t.results = results; t.lastCheck = nowSec(); found = true; } });
-    if (!found) { curId = Math.random().toString(16).slice(2, 8); tasks.push({ id: curId, name: name, seed: seed, results: results, created: nowSec(), lastCheck: nowSec(), changed: false }); }
-    save(tasks);
+    all.forEach(function (t) {
+      if (t.id === curId) {
+        t.name = name; t.seed = seed; t.words = seed; t.results = results; t.alive = alive;
+        t.lastCheck = now; t.status = alive ? "amber" : "green"; t.type = ttype; found = true;
+      }
+    });
+    if (!found) {
+      curId = Math.random().toString(16).slice(2, 8);
+      all.push({ id: curId, name: name, mode: "A", type: ttype, status: alive ? "amber" : "green",
+        seed: seed, words: seed, results: results, alive: alive, created: now, started: now,
+        lastCheck: now, changed: false, log: [{ ts: now, msg: "проверка активности: путей " + results.length + ", живых " + alive }] });
+    }
+    save(all);
   }
 
   function collapse() {
@@ -184,7 +196,7 @@
 
   // ---------- авто-проверка раз в 24ч (когда страница открыта) ----------
   function dueCheck() {
-    var tasks = load().filter(function (t) { return nowSec() - (t.lastCheck || 0) > 86400; });
+    var tasks = onlyA(load()).filter(function (t) { return nowSec() - (t.lastCheck || 0) > 86400; });
     if (!tasks.length) return;
     var i = 0;
     function nextTask() {

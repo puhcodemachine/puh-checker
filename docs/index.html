@@ -149,6 +149,21 @@
   .db-meta{color:var(--muted);font-size:12px}
   .db-caret{color:var(--green);text-align:center}
 
+  /* режим-бейдж + отчёт адресов (Режим А) */
+  .mode-badge{font-size:10px;padding:1px 6px;border:1px solid var(--green-dim);border-radius:3px;color:var(--green);letter-spacing:1px;margin-left:4px}
+  .mode-badge.a{border-color:#27c4ff;color:#5fd0ff}
+  .net-group{margin:14px 0}
+  .net-h{font-size:13px;color:var(--green);letter-spacing:1px;border-bottom:1px dashed var(--line);padding-bottom:6px;margin-bottom:8px}
+  .addr-row{display:grid;grid-template-columns:160px 1fr 150px 130px;gap:12px;align-items:center;
+    padding:7px 6px;border-bottom:1px dotted var(--line);font-size:12.5px}
+  .addr-row.alive{background:rgba(63,207,114,.08);border-left:2px solid #3fcf72;padding-left:8px}
+  .ar-std{color:var(--muted);font-size:11px}
+  .ar-addr{color:var(--txt);word-break:break-all;font-size:12px}
+  .ar-bal{color:var(--amber);text-align:right;font-size:12px}
+  .ar-flag{text-align:right;font-size:11px}
+  .ar-flag.alive{color:#3fcf72;font-weight:700}
+  .ar-flag.empty{color:var(--muted)}
+
   /* ЛЕВАЯ ПАНЕЛЬ ЗАДАНИЙ */
   .sidebar{width:360px;flex-shrink:0;border-right:1px solid var(--green-dim);
     display:flex;flex-direction:column;min-height:0;background:linear-gradient(180deg,rgba(34,160,86,.03),transparent)}
@@ -360,9 +375,9 @@
       <!-- ПРАВОЕ ПОЛЕ -->
       <main class="main">
         <nav class="topnav">
-          <div class="tab" data-target="new" onclick="selTab(this)"><span class="ico">＋</span>НОВОЕ ЗАДАНИЕ</div>
-          <div class="tab" data-target="edit" onclick="selTab(this)"><span class="ico">✎</span>ИЗМЕНИТЬ ЗАДАНИЕ</div>
-          <div class="tab" data-target="db" onclick="selTab(this)"><span class="ico">▦</span>БАЗА ДАННЫХ</div>
+          <div class="tab active" data-target="home" onclick="selTab(this)"><span class="ico">⌂</span>ГЛАВНАЯ</div>
+          <div class="tab" onclick="location.href='mode-a/'"><span class="ico">◎</span>РЕЖИМ А</div>
+          <div class="tab" data-target="new" onclick="selTab(this)"><span class="ico">⟲</span>РЕЖИМ Б</div>
         </nav>
         <div class="workspace">
 

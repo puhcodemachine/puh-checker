@@ -47,7 +47,9 @@
   function lsSave(a) { try { localStorage.setItem(LS, JSON.stringify(a)); } catch (e) {} }
   function lsSummary(t) {
     return { id: t.id, name: t.name, type: t.type, status: t.status, modes: t.modes,
-             created: t.created, started: t.started, stopped: t.stopped, results: (t.results || []).length };
+             created: t.created, started: t.started, stopped: t.stopped, pausedAt: t.pausedAt,
+             mode: t.mode || "B", alive: t.alive || 0, lastCheck: t.lastCheck,
+             results: (t.results || []).length };
   }
   function lsCreate(p) {
     var words = (p.words || "").trim(), nums = (p.nums || "").trim();
@@ -149,10 +151,21 @@
     var f = t.stopped || t.pausedAt;
     return '<span class="' + cls + ' t-run">' + (f ? dur(f - t.started) : "--:--:--") + "</span>";
   }
+  function cardHtmlA(t) {
+    var alive = t.alive || 0, lamp = alive ? "green" : "amber", cls = alive ? "green" : "amber";
+    var st = alive ? "● ЖИВАЯ · активных " + alive : "проверено · пусто";
+    return '<div class="task" data-id="' + t.id + '" onclick="openTask(\'' + t.id + '\')">' +
+      '<div class="task-top"><span class="task-name">' + esc(t.name) + ' <span class="mode-badge a">А</span></span><span class="lamp ' + lamp + '"></span></div>' +
+      '<div class="task-status ' + cls + '">' + st + '</div>' +
+      '<div class="task-type">тип: ' + esc(t.type || "проверка активности") + '</div>' +
+      '<div class="task-meta"><span>ЗАПУСК<span class="v">' + clock(t.started) + '</span></span>' +
+      '<span style="text-align:right">ПРОВЕРЕНО<span class="v">' + (t.lastCheck ? clock(t.lastCheck) : "--:--:--") + '</span></span></div></div>';
+  }
   function cardHtml(t) {
+    if (t.mode === "A") return cardHtmlA(t);
     var si = statusInfo(t.status);
     return '<div class="task" data-id="' + t.id + '" onclick="openTask(\'' + t.id + '\')">' +
-      '<div class="task-top"><span class="task-name">' + esc(t.name) + '</span><span class="lamp ' + si.lamp + '"></span></div>' +
+      '<div class="task-top"><span class="task-name">' + esc(t.name) + ' <span class="mode-badge">Б</span></span><span class="lamp ' + si.lamp + '"></span></div>' +
       '<div class="task-status ' + si.cls + '">' + si.txt + '</div>' +
       '<div class="task-type">тип: ' + esc(t.type) + '</div>' +
       '<div class="task-meta"><span>ЗАПУСК<span class="v">' + clock(t.started) + '</span></span>' +
@@ -187,7 +200,44 @@
     });
   };
 
+  function renderAddrReport(results) {
+    var coins = ["BTC", "LTC", "DOGE", "DASH", "ETH", "ETC"], html = "";
+    coins.forEach(function (coin) {
+      var rs = (results || []).filter(function (r) { return r.coin === coin; });
+      if (!rs.length) return;
+      html += '<div class="net-group"><div class="net-h">' + coin + "</div>";
+      rs.forEach(function (r) {
+        var al = r.alive;
+        var flag = al ? "● ЖИВОЙ" + (r.chains ? " [" + esc(r.chains) + "]" : "") + (r.txn ? " тx" + r.txn : "") : "пусто";
+        html += '<div class="addr-row' + (al ? " alive" : "") + '">' +
+          '<span class="ar-std">' + esc(r.std) + '<br><span style="opacity:.6">' + esc(r.path) + "</span></span>" +
+          '<span class="ar-addr">' + esc(r.addr || "—") + "</span>" +
+          '<span class="ar-bal">' + esc(r.bal || "—") + (r.received && r.received !== "—" && r.received !== r.bal ? " (получ. " + esc(r.received) + ")" : "") + "</span>" +
+          '<span class="ar-flag ' + (al ? "alive" : "empty") + '">' + flag + "</span></div>";
+      });
+      html += "</div>";
+    });
+    return html || '<div class="td-empty">нет адресов</div>';
+  }
+  function renderDetailA(t) {
+    var alive = t.alive || 0, res = t.results || [];
+    $("td-name").textContent = t.name;
+    $("td-lamp").className = "lamp " + (alive ? "green" : "amber");
+    var h = '<div class="td-toprow"><div class="td-sec td-half"><div class="td-h">СТАТУС И ВРЕМЯ</div><div class="td-grid">' +
+      '<span class="k">РЕЖИМ</span><span class="val">А · проверка активности</span>' +
+      '<span class="k">СТАТУС</span><span class="val ' + (alive ? "green" : "muted") + '">' + (alive ? "● ЖИВАЯ — активных " + alive : "проверено · пусто") + "</span>" +
+      '<span class="k">ТИП</span><span class="val">' + esc(t.type || "") + "</span>" +
+      '<span class="k">ЗАПУСК</span><span class="val">' + fmtDateTime(t.started) + "</span>" +
+      '<span class="k">ПОСЛЕДНЯЯ ПРОВЕРКА</span><span class="val">' + (t.lastCheck ? fmtDateTime(t.lastCheck) : "—") + "</span>" +
+      '<span class="k">АВТО-ПРОВЕРКА</span><span class="val">раз в 24ч (в Режиме А)</span></div></div></div>';
+    h += '<div class="td-sec"><div class="td-h">СИД-ФРАЗА</div><div class="td-mat">' + esc(t.words || t.seed || "") + "</div></div>";
+    h += '<div class="td-sec"><div class="td-h">АДРЕСА И АКТИВНОСТЬ (' + res.length + " путей · живых " + alive + ")</div>" + renderAddrReport(res) + "</div>";
+    h += '<div class="td-sec"><button class="btn-continue" onclick="location.href=\'mode-a/\'">↗ ОТКРЫТЬ В РЕЖИМЕ А (перепроверить)</button></div>';
+    $("td-inner").innerHTML = h;
+    var stop = $("td-stop"); if (stop) { stop.classList.add("hidden"); stop.onclick = null; }
+  }
   function renderDetail(t) {
+    if (t.mode === "A") return renderDetailA(t);
     var si = statusInfo(t.status), m = t.modes || {}, res = t.results || [];
     $("td-name").textContent = t.name;
     $("td-lamp").className = "lamp " + si.lamp;
@@ -407,6 +457,7 @@
 
   function goHome() {
     document.querySelectorAll(".tab").forEach(function (t) { t.classList.remove("active"); });
+    var ht = document.querySelector('.tab[data-target="home"]'); if (ht) ht.classList.add("active");
     document.querySelectorAll(".pane").forEach(function (p) { p.classList.toggle("hidden", p.getAttribute("data-pane") !== "home"); });
   }
   function flash(msg) {
