@@ -9,7 +9,7 @@
   function pad(n) { return (n < 10 ? "0" : "") + n; }
   function nowSec() { return Date.now() / 1000; }
   function fmtDT(ts) { if (!ts) return "—"; var d = new Date(ts * 1000); return pad(d.getDate()) + "." + pad(d.getMonth() + 1) + " " + pad(d.getHours()) + ":" + pad(d.getMinutes()); }
-  var RECHECK = 86400, SEED_WORKERS = 3, ADDR_CONC = 4, PAGE = 50;
+  var RECHECK = 86400, PAGE = 50, MINC = 1, MAXC = 5;
 
   // ---------- активность (как в Режиме А) ----------
   function explorerUrl(coin, chains, addr) {
@@ -23,17 +23,41 @@
     if (c === "Polygon") return "https://polygonscan.com/address/" + addr;
     return "https://etherscan.io/address/" + addr;
   }
-  function blockchair(chain, addr) {
-    return fetch("https://api.blockchair.com/" + chain + "/dashboards/address/" + addr).then(function (r) { return r.json(); })
-      .then(function (d) { var a = (((d.data || {})[addr]) || {}).address || {}; var bal = a.balance || 0, recv = a.received || 0, txn = a.transaction_count || 0;
-        return { bal: (bal / 1e8).toFixed(8), received: (recv / 1e8).toFixed(8), txn: txn, alive: bal > 0 || recv > 0 || txn > 0 }; })
-      .catch(function () { return { bal: "н/д", received: "—", txn: 0, alive: false }; });
+  // ПУХ: вставляй сюда API-ключи эксплореров — ротируются по кругу (распределение лимитов).
+  var KEYS = { blockchair: [/* "ключ1", "ключ2", "ключ3" */] };
+  var EVM = [
+    { name: "ETH", rpcs: ["https://eth.llamarpc.com", "https://rpc.ankr.com/eth", "https://cloudflare-eth.com"] },
+    { name: "BSC", rpcs: ["https://bsc-dataseed.binance.org", "https://bsc-dataseed1.defibit.io"] },
+    { name: "Polygon", rpcs: ["https://polygon-rpc.com", "https://rpc.ankr.com/polygon"] }
+  ];
+  var ETC_RPCS = ["https://etc.rivet.link", "https://etc.etcdesktop.com"];
+  var rr = {};
+  function rotate(key, arr) { if (!arr || !arr.length) return null; var i = (rr[key] || 0) % arr.length; rr[key] = i + 1; return arr[i]; }
+  // устойчивый fetch: лимит/ошибка → backoff+jitter и повтор; сообщает здоровье контроллеру потоков
+  function fetchRetry(url, opts) {
+    var TRIES = 4;
+    return new Promise(function (resolve) {
+      (function attempt(n) {
+        fetch(url, opts).then(function (r) {
+          if ([429, 430, 420, 502, 503, 504].indexOf(r.status) >= 0) { ctrl.report(false, true); if (n < TRIES) setTimeout(function () { attempt(n + 1); }, ctrl.backoff(n)); else resolve(null); }
+          else { ctrl.report(true, false); resolve(r); }
+        }).catch(function () { ctrl.report(false, false); if (n < TRIES) setTimeout(function () { attempt(n + 1); }, ctrl.backoff(n)); else resolve(null); });
+      })(1);
+    });
   }
-  var EVM = [{ name: "ETH", rpc: "https://eth.llamarpc.com" }, { name: "BSC", rpc: "https://bsc-dataseed.binance.org" }, { name: "Polygon", rpc: "https://polygon-rpc.com" }];
-  function rpc(url, m, p) { return fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: m, params: p }) }).then(function (r) { return r.json(); }).then(function (d) { return d.result; }); }
-  function evmOne(addr, url, name) { return Promise.all([rpc(url, "eth_getBalance", [addr, "latest"]), rpc(url, "eth_getTransactionCount", [addr, "latest"])]).then(function (a) { var wei = a[0] ? parseInt(a[0], 16) : 0, nonce = a[1] ? parseInt(a[1], 16) : 0; return { chain: name, wei: wei, nonce: nonce, alive: wei > 0 || nonce > 0 }; }).catch(function () { return { chain: name, wei: 0, nonce: 0, alive: false }; }); }
-  function evmAll(addr) { return Promise.all(EVM.map(function (c) { return evmOne(addr, c.rpc, c.name); })).then(function (rs) { var alive = rs.some(function (x) { return x.alive; }), hits = rs.filter(function (x) { return x.alive; }).map(function (x) { return x.chain; }).join(", "); var wei = rs.reduce(function (s, x) { return s + (x.wei || 0); }, 0), nonce = rs.reduce(function (s, x) { return s + (x.nonce || 0); }, 0); return { bal: (wei / 1e18).toFixed(6), received: "—", txn: nonce, alive: alive, chains: hits }; }); }
-  function etcOne(addr) { return evmOne(addr, "https://etc.rivet.link", "ETC").then(function (r) { return { bal: (r.wei / 1e18).toFixed(6), received: "—", txn: r.nonce, alive: r.alive, chains: r.alive ? "ETC" : "" }; }).catch(function () { return { bal: "н/д", received: "—", txn: 0, alive: false }; }); }
+  function blockchair(chain, addr) {
+    var k = rotate("bc", KEYS.blockchair);
+    var url = "https://api.blockchair.com/" + chain + "/dashboards/address/" + addr + (k ? "?key=" + k : "");
+    return fetchRetry(url).then(function (r) { return r ? r.json() : null; }).then(function (d) {
+      if (!d) return { bal: "н/д", received: "—", txn: 0, alive: false };
+      var a = (((d.data || {})[addr]) || {}).address || {}; var bal = a.balance || 0, recv = a.received || 0, txn = a.transaction_count || 0;
+      return { bal: (bal / 1e8).toFixed(8), received: (recv / 1e8).toFixed(8), txn: txn, alive: bal > 0 || recv > 0 || txn > 0 };
+    }).catch(function () { return { bal: "н/д", received: "—", txn: 0, alive: false }; });
+  }
+  function rpc(rpcs, key, m, p) { return fetchRetry(rotate(key, rpcs), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: m, params: p }) }).then(function (r) { return r ? r.json() : null; }).then(function (d) { return d ? d.result : null; }); }
+  function evmOne(addr, rpcs, name) { return Promise.all([rpc(rpcs, "evm_" + name, "eth_getBalance", [addr, "latest"]), rpc(rpcs, "evm_" + name, "eth_getTransactionCount", [addr, "latest"])]).then(function (a) { var wei = a[0] ? parseInt(a[0], 16) : 0, nonce = a[1] ? parseInt(a[1], 16) : 0; return { chain: name, wei: wei, nonce: nonce, alive: wei > 0 || nonce > 0 }; }).catch(function () { return { chain: name, wei: 0, nonce: 0, alive: false }; }); }
+  function evmAll(addr) { return Promise.all(EVM.map(function (c) { return evmOne(addr, c.rpcs, c.name); })).then(function (rs) { var alive = rs.some(function (x) { return x.alive; }), hits = rs.filter(function (x) { return x.alive; }).map(function (x) { return x.chain; }).join(", "); var wei = rs.reduce(function (s, x) { return s + (x.wei || 0); }, 0), nonce = rs.reduce(function (s, x) { return s + (x.nonce || 0); }, 0); return { bal: (wei / 1e18).toFixed(6), received: "—", txn: nonce, alive: alive, chains: hits }; }); }
+  function etcOne(addr) { return evmOne(addr, ETC_RPCS, "ETC").then(function (r) { return { bal: (r.wei / 1e18).toFixed(6), received: "—", txn: r.nonce, alive: r.alive, chains: r.alive ? "ETC" : "" }; }).catch(function () { return { bal: "н/д", received: "—", txn: 0, alive: false }; }); }
   function checkAct(r) { if (r.chain === "evm") return evmAll(r.addr); if (r.chain === "ethereum-classic") return etcOne(r.addr); return blockchair(r.chain, r.addr); }
   function aliveCount(results) { return (results || []).filter(function (r) { return r.alive; }).length; }
   function slim(rows) { return rows.map(function (r) { var a = r.act || {}; return { coin: r.coin, std: r.std, path: r.path, addr: r.addr, bal: a.bal, received: a.received, txn: a.txn, alive: !!a.alive, chains: a.chains || "" }; }); }
@@ -86,57 +110,66 @@
     return idbBulkPutSum(added).then(function () { return { added: added.length, dup: dup, invalid: invalid, total: lines.length }; });
   }
 
-  // ---------- скан ----------
-  function pickNext() {
-    for (var i = 0; i < sums.length; i++) {
-      var s = sums[i];
-      if (s.status === "scanning" || s.status === "invalid") continue;
-      var due = (s.status === "empty" || s.status === "alive" || s.status === "error") && s.lastCheck && nowSec() - s.lastCheck > RECHECK;
-      if (s.status === "pending" || due) { s.status = "scanning"; return s; }
-    }
+  // ---------- адаптивный скан: очередь + рандомизация + контроль потоков (AIMD) ----------
+  function nowMs() { return Date.now(); }
+  // контроллер потоков: загрузка большая + API здоровы → к 5; лимиты/ошибки → к 1-2 и откат
+  var ctrl = {
+    target: 2, coolUntil: 0, okStreak: 0,
+    maxByLoad: function (rem) { return rem >= 200 ? 5 : rem >= 50 ? 4 : rem >= 15 ? 3 : rem >= 5 ? 2 : 1; },
+    report: function (ok, limited) {
+      if (limited) { this.target = Math.max(MINC, this.target - 1); this.coolUntil = nowMs() + 8000; this.okStreak = 0; }
+      else if (ok) { this.okStreak++; if (this.okStreak >= 20 && nowMs() > this.coolUntil) { this.target = Math.min(MAXC, this.target + 1); this.okStreak = 0; } }
+      else { this.okStreak = 0; }
+    },
+    effective: function (rem) { return Math.max(MINC, Math.min(this.target, this.maxByLoad(rem))); },
+    backoff: function (n) { return Math.min(15000, 500 * Math.pow(2, n)) + Math.floor(Math.random() * 500); }
+  };
+  function isDue(s) { return s.status === "pending" || ((s.status === "empty" || s.status === "alive" || s.status === "error") && s.lastCheck && nowSec() - s.lastCheck > RECHECK); }
+  function dueCount() { var c = 0; sums.forEach(function (s) { if (isDue(s)) c++; }); return c; }
+  var queue = [], qpos = 0, inflight = 0;
+  function buildQueue() {
+    var due = sums.filter(isDue);
+    for (var i = due.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)); var t = due[i]; due[i] = due[j]; due[j] = t; } // рандомизация порядка
+    queue = due; qpos = 0;
+  }
+  function queueRemaining() { var c = 0; for (var i = qpos; i < queue.length; i++) { var s = queue[i]; if (s.status !== "scanning" && s.status !== "invalid" && isDue(s)) c++; } return c; }
+  function nextFromQueue() {
+    while (qpos < queue.length) { var s = queue[qpos++]; if (s.status === "scanning" || s.status === "invalid") continue; if (isDue(s)) { s.status = "scanning"; return s; } }
     return null;
   }
-  function mapLimit(items, limit, fn) {
+  // одна сид: адреса последовательно (1 запрос на поток), с лёгким джиттером; ретраи внутри fetchRetry
+  function scanOneAdaptive(s) {
+    var rows = window.PUHPATHS.matrix(); rows.forEach(function (r) { r.addr = window.PUHPATHS.deriveOne(r, s.seed); });
+    var valid = rows.filter(function (r) { return r.addr; }), i = 0;
     return new Promise(function (resolve) {
-      var i = 0, active = 0, done = 0, n = items.length;
-      if (!n) return resolve();
-      function pump() {
-        while (active < limit && i < n) {
-          var it = items[i++]; active++;
-          Promise.resolve(fn(it)).then(function () { active--; done++; if (done === n) resolve(); else pump(); });
+      (function next() {
+        if (i >= valid.length) {
+          var results = slim(rows), alive = aliveCount(results);
+          s.alive = alive; s.status = alive ? "alive" : "empty"; s.lastCheck = nowSec();
+          idbPutRes(s.id, results).then(function () { return idbPutSum(s); }).then(resolve, resolve);
+          return;
         }
-      }
-      pump();
+        var r = valid[i++];
+        checkAct(r).then(function (a) { r.act = a; if (openId === s.id) renderDetail(s.id); setTimeout(next, 60 + Math.floor(Math.random() * 140)); });
+      })();
     });
   }
-  function scanOne(s) {
-    var rows = window.PUHPATHS.matrix(); rows.forEach(function (r) { r.addr = window.PUHPATHS.deriveOne(r, s.seed); });
-    return mapLimit(rows.filter(function (r) { return r.addr; }), ADDR_CONC, function (r) { return checkAct(r).then(function (a) { r.act = a; }); })
-      .then(function () {
-        var results = slim(rows), alive = aliveCount(results);
-        s.alive = alive; s.status = alive ? "alive" : "empty"; s.lastCheck = nowSec();
-        return idbPutRes(s.id, results).then(function () { return idbPutSum(s); });
-      });
-  }
-  function scanLoop() {
-    if (massRunning) return; massRunning = true; renderControls(); startListTimer();
-    var workers = [];
-    for (var w = 0; w < SEED_WORKERS; w++) workers.push(worker());
-    Promise.all(workers).then(function () { massRunning = false; renderControls(); renderStats(); renderList(); stopListTimer(); });
-    function worker() {
-      return new Promise(function (resolve) {
-        (function loop() {
-          if (!massRunning) return resolve();
-          var s = pickNext(); if (!s) return resolve();
-          renderStats();
-          scanOne(s).catch(function (e) { s.status = "error"; s.lastCheck = nowSec(); idbPutSum(s); })
-            .then(function () { if (openId === s.id) renderDetail(s.id); loop(); });
-        })();
-      });
+  function scanLoop() { if (massRunning) return; massRunning = true; buildQueue(); startListTimer(); pump(); }
+  function pump() {
+    if (!massRunning) { if (inflight === 0) finishScan(); return; }
+    if (qpos >= queue.length && dueCount() > 0) buildQueue();    // подхватываем добавленные/просроченные на лету
+    var rem = queueRemaining();
+    if (rem === 0 && inflight === 0) { finishScan(); return; }
+    var eff = ctrl.effective(rem + inflight);                    // адаптивное число потоков
+    while (massRunning && inflight < eff) {
+      var s = nextFromQueue(); if (!s) break;
+      inflight++;
+      scanOneAdaptive(s).then(function () { inflight--; pump(); });
     }
+    renderControls(); renderStats();
   }
-  function pauseScan() { massRunning = false; sums.forEach(function (s) { if (s.status === "scanning") s.status = "pending"; }); renderControls(); renderStats(); renderList(); stopListTimer(); }
-  function dueCount() { var c = 0; sums.forEach(function (s) { if (s.status === "pending" || ((s.status === "empty" || s.status === "alive" || s.status === "error") && s.lastCheck && nowSec() - s.lastCheck > RECHECK)) c++; }); return c; }
+  function finishScan() { massRunning = false; sums.forEach(function (s) { if (s.status === "scanning") s.status = "pending"; }); renderControls(); renderStats(); renderList(); stopListTimer(); }
+  function pauseScan() { massRunning = false; renderControls(); }   // активные потоки доработают, новые не берём
 
   // ---------- рендер ----------
   function counts() {
@@ -161,6 +194,7 @@
   function renderControls() {
     $("start").disabled = massRunning; $("pause").disabled = !massRunning;
     $("start").textContent = massRunning ? "▶ ИДЁТ…" : "▶ СТАРТ ПРОВЕРКИ";
+    var c = $("conc"); if (c) c.textContent = massRunning ? ("◉ потоков онлайн: " + inflight + " · цель " + ctrl.effective(queueRemaining() + inflight) + "/" + MAXC) : "";
   }
   function matchFilter(s) {
     if (filter === "all") return true;
@@ -199,7 +233,7 @@
   window.massOpen = function (id) { renderDetail(id); window.scrollTo(0, $("detail").offsetTop - 60); };
   window.massCloseDetail = function () { openId = null; $("detail").classList.add("hidden"); };
   window.massPage = function (d) { page += d; renderList(); window.scrollTo(0, $("mlist").offsetTop - 80); };
-  function startListTimer() { if (listTimer) return; listTimer = setInterval(function () { renderStats(); if (filter === "scanning" || filter === "all") renderList(); }, 1800); }
+  function startListTimer() { if (listTimer) return; listTimer = setInterval(function () { renderStats(); renderControls(); if (filter === "scanning" || filter === "all") renderList(); }, 1800); }
   function stopListTimer() { if (listTimer) { clearInterval(listTimer); listTimer = null; } }
 
   function refreshAll() { renderStats(); renderControls(); renderList(); }

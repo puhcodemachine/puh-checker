@@ -45,6 +45,7 @@
   .progress{height:6px;background:#0c1a0e;border:1px solid var(--line);margin:6px 0 16px;overflow:hidden}
   .progress>i{display:block;height:100%;background:linear-gradient(90deg,var(--green-dim),var(--green));width:0%}
   .controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+  .conc{color:var(--amber);font-size:12px;letter-spacing:.5px}
   .auto{display:flex;gap:6px;align-items:center;color:var(--muted);font-size:12px;margin-left:auto}
   .filters{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
   .chip{font-size:11px;padding:6px 11px;border:1px solid var(--line);color:var(--muted);cursor:pointer;letter-spacing:.5px}
@@ -118,6 +119,7 @@
       <button class="b run" id="start">▶ СТАРТ ПРОВЕРКИ</button>
       <button class="b ghost" id="pause" disabled>⏸ ПАУЗА</button>
       <button class="b danger" id="clear">🗑 ОЧИСТИТЬ ВСЁ</button>
+      <span class="conc" id="conc"></span>
       <label class="auto"><input type="checkbox" id="auto" checked> авто-перепроверка 24ч</label>
     </div>
 
@@ -136,7 +138,7 @@
     <div class="mlist" id="mlist"></div>
     <div class="pager" id="pager"></div>
 
-    <div class="note">Проверяется как в Режиме А: BTC (Legacy/P2SH/SegWit), LTC ×3, DOGE, DASH, ETH (Standard+Ledger на ETH/BSC/Polygon), ETC — ~45 адресов на сид. Баланс/история/«получено когда-либо» через публичные API; на больших объёмах — фоном, с паузой и возобновлением, возможны лимиты провайдеров. Среда изолирована (IndexedDB «puh_mass»), главная панель не затрагивается.</div>
+    <div class="note">Проверяется как в Режиме А: BTC (Legacy/P2SH/SegWit), LTC ×3, DOGE, DASH, ETH (Standard+Ledger на ETH/BSC/Polygon), ETC — ~45 адресов на сид. Очередь рандомизируется; число потоков подстраивается само (1→5): при большой очереди и здоровых API растёт, при лимитах/ошибках снижается и откатывается — <b>без сбоев</b>. Ретраи с задержкой, ротация нод/ключей (свои ключи эксплореров — в KEYS в mass.js). Среда изолирована (IndexedDB «puh_mass»), главная панель не затрагивается.</div>
   </div>
   <script src="static/bip39.js"></script>
   <script src="static/checker.js"></script>
