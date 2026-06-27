@@ -1,0 +1,244 @@
+/* ПУХ · МАСС-ПРОВЕРКА — изолированная среда (IndexedDB "puh_mass").
+   Массовая загрузка сид из .txt → каждая отдельной задачей (имена 1,2,3…),
+   фоновая проверка всех путей (Режим А) с параллелизмом, пауза/возобновление, авто-цикл 24ч.
+   НЕ трогает общее хранилище puh_tasks главной панели. */
+(function () {
+  "use strict";
+  function $(id) { return document.getElementById(id); }
+  function esc(s) { return (s == null ? "" : "" + s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;"); }
+  function pad(n) { return (n < 10 ? "0" : "") + n; }
+  function nowSec() { return Date.now() / 1000; }
+  function fmtDT(ts) { if (!ts) return "—"; var d = new Date(ts * 1000); return pad(d.getDate()) + "." + pad(d.getMonth() + 1) + " " + pad(d.getHours()) + ":" + pad(d.getMinutes()); }
+  var RECHECK = 86400, SEED_WORKERS = 3, ADDR_CONC = 4, PAGE = 50;
+
+  // ---------- активность (как в Режиме А) ----------
+  function explorerUrl(coin, chains, addr) {
+    var c = (chains || "").split(",")[0].trim();
+    if (coin === "BTC") return "https://blockstream.info/address/" + addr;
+    if (coin === "LTC") return "https://blockchair.com/litecoin/address/" + addr;
+    if (coin === "DOGE") return "https://blockchair.com/dogecoin/address/" + addr;
+    if (coin === "DASH") return "https://blockchair.com/dash/address/" + addr;
+    if (coin === "ETC") return "https://etc.blockscout.com/address/" + addr;
+    if (c === "BSC") return "https://bscscan.com/address/" + addr;
+    if (c === "Polygon") return "https://polygonscan.com/address/" + addr;
+    return "https://etherscan.io/address/" + addr;
+  }
+  function blockchair(chain, addr) {
+    return fetch("https://api.blockchair.com/" + chain + "/dashboards/address/" + addr).then(function (r) { return r.json(); })
+      .then(function (d) { var a = (((d.data || {})[addr]) || {}).address || {}; var bal = a.balance || 0, recv = a.received || 0, txn = a.transaction_count || 0;
+        return { bal: (bal / 1e8).toFixed(8), received: (recv / 1e8).toFixed(8), txn: txn, alive: bal > 0 || recv > 0 || txn > 0 }; })
+      .catch(function () { return { bal: "н/д", received: "—", txn: 0, alive: false }; });
+  }
+  var EVM = [{ name: "ETH", rpc: "https://eth.llamarpc.com" }, { name: "BSC", rpc: "https://bsc-dataseed.binance.org" }, { name: "Polygon", rpc: "https://polygon-rpc.com" }];
+  function rpc(url, m, p) { return fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: m, params: p }) }).then(function (r) { return r.json(); }).then(function (d) { return d.result; }); }
+  function evmOne(addr, url, name) { return Promise.all([rpc(url, "eth_getBalance", [addr, "latest"]), rpc(url, "eth_getTransactionCount", [addr, "latest"])]).then(function (a) { var wei = a[0] ? parseInt(a[0], 16) : 0, nonce = a[1] ? parseInt(a[1], 16) : 0; return { chain: name, wei: wei, nonce: nonce, alive: wei > 0 || nonce > 0 }; }).catch(function () { return { chain: name, wei: 0, nonce: 0, alive: false }; }); }
+  function evmAll(addr) { return Promise.all(EVM.map(function (c) { return evmOne(addr, c.rpc, c.name); })).then(function (rs) { var alive = rs.some(function (x) { return x.alive; }), hits = rs.filter(function (x) { return x.alive; }).map(function (x) { return x.chain; }).join(", "); var wei = rs.reduce(function (s, x) { return s + (x.wei || 0); }, 0), nonce = rs.reduce(function (s, x) { return s + (x.nonce || 0); }, 0); return { bal: (wei / 1e18).toFixed(6), received: "—", txn: nonce, alive: alive, chains: hits }; }); }
+  function etcOne(addr) { return evmOne(addr, "https://etc.rivet.link", "ETC").then(function (r) { return { bal: (r.wei / 1e18).toFixed(6), received: "—", txn: r.nonce, alive: r.alive, chains: r.alive ? "ETC" : "" }; }).catch(function () { return { bal: "н/д", received: "—", txn: 0, alive: false }; }); }
+  function checkAct(r) { if (r.chain === "evm") return evmAll(r.addr); if (r.chain === "ethereum-classic") return etcOne(r.addr); return blockchair(r.chain, r.addr); }
+  function aliveCount(results) { return (results || []).filter(function (r) { return r.alive; }).length; }
+  function slim(rows) { return rows.map(function (r) { var a = r.act || {}; return { coin: r.coin, std: r.std, path: r.path, addr: r.addr, bal: a.bal, received: a.received, txn: a.txn, alive: !!a.alive, chains: a.chains || "" }; }); }
+  function fatten(results) { return (results || []).map(function (r) { return { coin: r.coin, std: r.std, path: r.path, addr: r.addr, act: { bal: r.bal, received: r.received, txn: r.txn, alive: r.alive, chains: r.chains } }; }); }
+  function buildReport(rows) {
+    var coins = ["BTC", "LTC", "DOGE", "DASH", "ETH", "ETC"], html = "";
+    coins.forEach(function (coin) {
+      var rs = rows.filter(function (r) { return r.coin === coin; }); if (!rs.length) return;
+      html += '<div class="net-group"><div class="net-h">' + coin + (coin === "ETH" ? " · EVM (ETH/BSC/Polygon)" : "") + "</div>";
+      rs.forEach(function (r) {
+        var a = r.act || {}, alive = a.alive;
+        var balTxt = a.bal == null ? "…" : esc(a.bal) + (a.received && a.received !== "—" && a.received !== a.bal ? " (получено " + esc(a.received) + ")" : "");
+        var flag = a.bal == null ? "…" : alive ? '<a href="' + explorerUrl(r.coin, a.chains, r.addr) + '" target="_blank" rel="noopener" class="tx-link">● ЖИВОЙ' + (a.chains ? " [" + esc(a.chains) + "]" : "") + (a.txn ? " тx" + a.txn : "") + " ↗</a>" : "пусто";
+        html += '<div class="addr-row' + (alive ? " alive" : "") + '"><span class="ar-std">' + esc(r.std) + '<br><span style="opacity:.6">' + esc(r.path) + "</span></span><span class=\"ar-addr\">" + (r.addr ? esc(r.addr) : "—") + '</span><span class="ar-bal">' + balTxt + '</span><span class="ar-flag ' + (a.bal == null ? "empty" : alive ? "alive" : "empty") + '">' + flag + "</span></div>";
+      });
+      html += "</div>";
+    });
+    return html;
+  }
+
+  // ---------- IndexedDB ----------
+  var DB = null;
+  function idb() { return new Promise(function (res, rej) { if (DB) return res(DB); var rq = indexedDB.open("puh_mass", 1); rq.onupgradeneeded = function (e) { var db = e.target.result; if (!db.objectStoreNames.contains("sum")) db.createObjectStore("sum", { keyPath: "id" }); if (!db.objectStoreNames.contains("res")) db.createObjectStore("res", { keyPath: "id" }); }; rq.onsuccess = function () { DB = rq.result; res(DB); }; rq.onerror = function () { rej(rq.error); }; }); }
+  function st(store, mode) { return idb().then(function (db) { return db.transaction(store, mode).objectStore(store); }); }
+  function idbPutSum(o) { return st("sum", "readwrite").then(function (os) { return new Promise(function (res) { os.put(o).onsuccess = function () { res(); }; }); }); }
+  function idbPutRes(id, results) { return st("res", "readwrite").then(function (os) { return new Promise(function (res) { os.put({ id: id, results: results }).onsuccess = function () { res(); }; }); }); }
+  function idbGetRes(id) { return st("res", "readonly").then(function (os) { return new Promise(function (res) { var r = os.get(id); r.onsuccess = function () { res(r.result ? r.result.results : null); }; }); }); }
+  function idbAllSum() { return st("sum", "readonly").then(function (os) { return new Promise(function (res, rej) { var out = [], r = os.openCursor(); r.onsuccess = function (e) { var c = e.target.result; if (c) { out.push(c.value); c.continue(); } else res(out); }; r.onerror = function () { rej(r.error); }; }); }); }
+  function idbBulkPutSum(arr) { return idb().then(function (db) { return new Promise(function (res, rej) { var t = db.transaction("sum", "readwrite"), os = t.objectStore("sum"); arr.forEach(function (o) { os.put(o); }); t.oncomplete = function () { res(); }; t.onerror = function () { rej(t.error); }; }); }); }
+  function idbClear() { return idb().then(function (db) { return new Promise(function (res) { var t = db.transaction(["sum", "res"], "readwrite"); t.objectStore("sum").clear(); t.objectStore("res").clear(); t.oncomplete = function () { res(); }; }); }); }
+
+  // ---------- состояние ----------
+  var sums = [], idMap = {}, massRunning = false, filter = "all", search = "", page = 0, openId = null, listTimer = null;
+  function rebuild() { idMap = {}; sums.forEach(function (s) { idMap[s.id] = s; }); }
+
+  // ---------- загрузка ----------
+  function bulkCreate(text) {
+    var lines = text.split(/\r?\n/).map(function (s) { return s.trim().toLowerCase().replace(/\s+/g, " "); }).filter(Boolean);
+    var existing = {}; sums.forEach(function (s) { existing[s.seed] = 1; });
+    var startNum = sums.length ? Math.max.apply(null, sums.map(function (s) { return +s.id || 0; })) : 0;
+    var added = [], dup = 0, invalid = 0, seen = {};
+    lines.forEach(function (seed) {
+      if (seen[seed] || existing[seed]) { dup++; return; } seen[seed] = 1;
+      var ok = window.PUHCORE.validateWords(seed).checksum === true;
+      if (!ok) invalid++;
+      startNum++;
+      added.push({ id: startNum, name: String(startNum), seed: seed, status: ok ? "pending" : "invalid", alive: 0, lastCheck: null, created: nowSec() });
+    });
+    sums = sums.concat(added); rebuild();
+    return idbBulkPutSum(added).then(function () { return { added: added.length, dup: dup, invalid: invalid, total: lines.length }; });
+  }
+
+  // ---------- скан ----------
+  function pickNext() {
+    for (var i = 0; i < sums.length; i++) {
+      var s = sums[i];
+      if (s.status === "scanning" || s.status === "invalid") continue;
+      var due = (s.status === "empty" || s.status === "alive" || s.status === "error") && s.lastCheck && nowSec() - s.lastCheck > RECHECK;
+      if (s.status === "pending" || due) { s.status = "scanning"; return s; }
+    }
+    return null;
+  }
+  function mapLimit(items, limit, fn) {
+    return new Promise(function (resolve) {
+      var i = 0, active = 0, done = 0, n = items.length;
+      if (!n) return resolve();
+      function pump() {
+        while (active < limit && i < n) {
+          var it = items[i++]; active++;
+          Promise.resolve(fn(it)).then(function () { active--; done++; if (done === n) resolve(); else pump(); });
+        }
+      }
+      pump();
+    });
+  }
+  function scanOne(s) {
+    var rows = window.PUHPATHS.matrix(); rows.forEach(function (r) { r.addr = window.PUHPATHS.deriveOne(r, s.seed); });
+    return mapLimit(rows.filter(function (r) { return r.addr; }), ADDR_CONC, function (r) { return checkAct(r).then(function (a) { r.act = a; }); })
+      .then(function () {
+        var results = slim(rows), alive = aliveCount(results);
+        s.alive = alive; s.status = alive ? "alive" : "empty"; s.lastCheck = nowSec();
+        return idbPutRes(s.id, results).then(function () { return idbPutSum(s); });
+      });
+  }
+  function scanLoop() {
+    if (massRunning) return; massRunning = true; renderControls(); startListTimer();
+    var workers = [];
+    for (var w = 0; w < SEED_WORKERS; w++) workers.push(worker());
+    Promise.all(workers).then(function () { massRunning = false; renderControls(); renderStats(); renderList(); stopListTimer(); });
+    function worker() {
+      return new Promise(function (resolve) {
+        (function loop() {
+          if (!massRunning) return resolve();
+          var s = pickNext(); if (!s) return resolve();
+          renderStats();
+          scanOne(s).catch(function (e) { s.status = "error"; s.lastCheck = nowSec(); idbPutSum(s); })
+            .then(function () { if (openId === s.id) renderDetail(s.id); loop(); });
+        })();
+      });
+    }
+  }
+  function pauseScan() { massRunning = false; sums.forEach(function (s) { if (s.status === "scanning") s.status = "pending"; }); renderControls(); renderStats(); renderList(); stopListTimer(); }
+  function dueCount() { var c = 0; sums.forEach(function (s) { if (s.status === "pending" || ((s.status === "empty" || s.status === "alive" || s.status === "error") && s.lastCheck && nowSec() - s.lastCheck > RECHECK)) c++; }); return c; }
+
+  // ---------- рендер ----------
+  function counts() {
+    var c = { total: sums.length, done: 0, alive: 0, queue: 0, err: 0, scanning: 0 };
+    sums.forEach(function (s) {
+      if (s.lastCheck) c.done++;
+      if (s.status === "alive") c.alive++;
+      else if (s.status === "scanning") c.scanning++;
+      else if (s.status === "error" || s.status === "invalid") c.err++;
+      if (s.status === "pending") c.queue++;
+    });
+    c.queue += c.scanning;
+    return c;
+  }
+  function renderStats() {
+    var c = counts();
+    $("s-total").textContent = c.total; $("s-done").textContent = c.done; $("s-alive").textContent = c.alive;
+    $("s-queue").textContent = c.queue; $("s-err").textContent = c.err;
+    var scannable = sums.filter(function (s) { return s.status !== "invalid"; }).length || 1;
+    $("prog-bar").style.width = Math.round(100 * c.done / scannable) + "%";
+  }
+  function renderControls() {
+    $("start").disabled = massRunning; $("pause").disabled = !massRunning;
+    $("start").textContent = massRunning ? "▶ ИДЁТ…" : "▶ СТАРТ ПРОВЕРКИ";
+  }
+  function matchFilter(s) {
+    if (filter === "all") return true;
+    if (filter === "error") return s.status === "error" || s.status === "invalid";
+    return s.status === filter;
+  }
+  function matchSearch(s) { if (!search) return true; return s.name.indexOf(search) >= 0 || s.seed.indexOf(search) >= 0; }
+  function filtered() { return sums.filter(function (s) { return matchFilter(s) && matchSearch(s); }); }
+  function renderList() {
+    var list = filtered(), el = $("mlist");
+    if (!sums.length) { el.innerHTML = '<div class="empty">список пуст — загрузи .txt со списком сид</div>'; $("pager").innerHTML = ""; return; }
+    if (!list.length) { el.innerHTML = '<div class="empty">нет задач под фильтр</div>'; $("pager").innerHTML = ""; return; }
+    var pages = Math.ceil(list.length / PAGE); if (page >= pages) page = pages - 1; if (page < 0) page = 0;
+    var slice = list.slice(page * PAGE, page * PAGE + PAGE);
+    el.innerHTML = slice.map(function (s) {
+      var alive = s.status === "alive", dot = alive ? "alive" : s.status === "scanning" ? "scan" : s.status === "error" || s.status === "invalid" ? "err" : s.status === "pending" ? "pending" : "";
+      var meta = s.status === "scanning" ? "проверка…" : s.status === "alive" ? "● живых: " + s.alive : s.status === "empty" ? "пусто" : s.status === "invalid" ? "невалидна" : s.status === "error" ? "ошибка" : "в очереди";
+      return '<div class="mrow ' + (alive ? "alive" : s.status === "invalid" ? "invalid" : "") + '" onclick="massOpen(' + s.id + ')">' +
+        '<span class="mdot ' + dot + '"></span><span class="mname">#' + esc(s.name) + '</span>' +
+        '<span class="mseed">' + esc(s.seed) + '</span>' +
+        '<span class="mmeta' + (alive ? " alive" : "") + '">' + meta + '</span>' +
+        '<span class="mwhen">' + (s.lastCheck ? fmtDT(s.lastCheck) : "—") + '</span></div>';
+    }).join("");
+    $("pager").innerHTML = pages > 1 ? '<button ' + (page === 0 ? "disabled" : "") + ' onclick="massPage(-1)">← назад</button> стр. ' + (page + 1) + " / " + pages + ' (' + list.length + ') <button ' + (page >= pages - 1 ? "disabled" : "") + ' onclick="massPage(1)">вперёд →</button>' : list.length + " задач";
+  }
+  function renderDetail(id) {
+    var s = idMap[id]; if (!s) return;
+    var d = $("detail"); d.classList.remove("hidden"); openId = id;
+    idbGetRes(id).then(function (results) {
+      var body = results && results.length ? buildReport(fatten(results)) : '<div class="ar-std" style="padding:8px">' + (s.status === "scanning" ? "идёт проверка…" : s.status === "invalid" ? "сид невалидна — не проверяется" : s.lastCheck ? "проверено · активных адресов нет" : "ещё не проверено") + "</div>";
+      var head = '<div class="detail-h"><b>#' + esc(s.name) + " · " + (s.status === "alive" ? "● ЖИВЫХ АДРЕСОВ: " + s.alive : s.status) + '</b><a onclick="massCloseDetail()">✕ закрыть</a></div>' +
+        '<div class="ar-std" style="word-break:break-all;margin-bottom:6px">' + esc(s.seed) + "</div>";
+      d.innerHTML = head + body;
+    });
+  }
+  window.massOpen = function (id) { renderDetail(id); window.scrollTo(0, $("detail").offsetTop - 60); };
+  window.massCloseDetail = function () { openId = null; $("detail").classList.add("hidden"); };
+  window.massPage = function (d) { page += d; renderList(); window.scrollTo(0, $("mlist").offsetTop - 80); };
+  function startListTimer() { if (listTimer) return; listTimer = setInterval(function () { renderStats(); if (filter === "scanning" || filter === "all") renderList(); }, 1800); }
+  function stopListTimer() { if (listTimer) { clearInterval(listTimer); listTimer = null; } }
+
+  function refreshAll() { renderStats(); renderControls(); renderList(); }
+
+  document.addEventListener("DOMContentLoaded", function () {
+    idbAllSum().then(function (rows) { sums = rows.sort(function (a, b) { return a.id - b.id; }); rebuild(); refreshAll();
+      // возобновить: если остались pending/«идёт» — но запускаем только по кнопке (большой объём). Авто-цикл по таймеру.
+      sums.forEach(function (s) { if (s.status === "scanning") s.status = "pending"; });
+    });
+    $("load").addEventListener("click", function () {
+      var paste = $("paste").value || "";
+      var doLoad = function (text) {
+        if (!text.trim()) { $("parse-msg").className = "parse-msg red"; $("parse-msg").textContent = "пусто — выбери файл или вставь список"; return; }
+        $("parse-msg").className = "parse-msg muted"; $("parse-msg").textContent = "загрузка…";
+        bulkCreate(text).then(function (r) {
+          $("parse-msg").className = "parse-msg green";
+          $("parse-msg").textContent = "✓ добавлено: " + r.added + " · дубликаты: " + r.dup + " · невалидных: " + r.invalid + " (из " + r.total + " строк)";
+          $("paste").value = ""; $("file").value = ""; page = 0; refreshAll();
+        });
+      };
+      var f = $("file").files[0];
+      if (f) { var rd = new FileReader(); rd.onload = function () { doLoad(String(rd.result) + (paste ? "\n" + paste : "")); }; rd.readAsText(f); }
+      else doLoad(paste);
+    });
+    $("start").addEventListener("click", scanLoop);
+    $("pause").addEventListener("click", pauseScan);
+    $("clear").addEventListener("click", function () {
+      if (!sums.length) return;
+      if (!confirm("Удалить ВСЕ " + sums.length + " задач масс-проверки? (главная панель не затрагивается)")) return;
+      massRunning = false; idbClear().then(function () { sums = []; rebuild(); openId = null; $("detail").classList.add("hidden"); page = 0; refreshAll(); $("parse-msg").className = "parse-msg muted"; $("parse-msg").textContent = "очищено"; });
+    });
+    [].forEach.call(document.getElementsByClassName("chip"), function (ch) {
+      ch.addEventListener("click", function () {
+        [].forEach.call(document.getElementsByClassName("chip"), function (c) { c.classList.remove("active"); });
+        ch.classList.add("active"); filter = ch.getAttribute("data-f"); page = 0; renderList();
+      });
+    });
+    $("search").addEventListener("input", function () { search = (this.value || "").trim().toLowerCase(); page = 0; renderList(); });
+    // авто-цикл 24ч: каждую минуту проверяем, есть ли просроченные, и если включено и не идёт — запускаем
+    setInterval(function () { if ($("auto").checked && !massRunning && dueCount() > 0) scanLoop(); }, 60000);
+  });
+})();

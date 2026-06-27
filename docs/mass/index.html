@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ПУХ · МАСС-ПРОВЕРКА</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#050805;--panel:#0a110b;--green:#32c266;--green-dim:#1a6a35;--amber:#e8b73a;--red:#e85a5a;--txt:#6fbe87;--muted:#386b49;--line:#143f24}
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{background:var(--bg);color:var(--txt);font-family:'Share Tech Mono',ui-monospace,monospace;overflow-y:auto}
+  body::before{content:"";position:fixed;inset:0;z-index:9;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(0,0,0,.18) 0,rgba(0,0,0,.18) 1px,transparent 2px,transparent 3px);mix-blend-mode:multiply}
+  .frame{max-width:1060px;margin:0 auto;padding:22px;position:relative;z-index:1}
+  .top{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--green-dim);padding-bottom:10px;margin-bottom:20px}
+  .brand{display:flex;align-items:center;gap:10px}
+  .emblem{width:30px;height:30px;display:grid;place-items:center;border-radius:6px;background:linear-gradient(135deg,var(--green),#179a50);color:#04130a;font-weight:800;font-size:16px}
+  .brand b{font-size:15px;letter-spacing:1.5px;color:var(--green)}
+  .brand span{display:block;font-size:10px;color:var(--muted);letter-spacing:2px}
+  .top a{color:var(--muted);font-size:12px;text-decoration:none;border:1px solid var(--line);padding:7px 12px}
+  .top a:hover{border-color:var(--green);color:var(--green)}
+  h1{font-size:16px;letter-spacing:1.5px;color:var(--green);margin:0 0 6px}
+  .lead{color:var(--muted);font-size:12.5px;margin:0 0 16px;line-height:1.55}
+  .flabel{font-size:12px;color:var(--green);letter-spacing:1px;margin:0 0 7px}
+  .upload{border:1px dashed var(--line);background:#070f07;padding:16px;margin-bottom:18px}
+  .upload input[type=file]{color:var(--txt);font-family:inherit;font-size:13px}
+  textarea{width:100%;height:90px;background:#070f07;border:1px solid var(--line);color:var(--txt);font-family:inherit;font-size:13px;padding:10px 12px;outline:none;resize:vertical;line-height:1.5;margin-top:10px}
+  textarea:focus{border-color:var(--green)}
+  button.b{padding:11px 20px;border:0;cursor:pointer;font-family:inherit;font-size:13px;font-weight:700;letter-spacing:1px}
+  button.b.run{background:linear-gradient(135deg,var(--green),#179a50);color:#04130a}
+  button.b.ghost{background:rgba(34,160,86,.1);border:1px solid var(--green);color:var(--green)}
+  button.b.danger{background:rgba(232,90,90,.1);border:1px solid var(--red);color:var(--red)}
+  button.b:disabled{opacity:.45;cursor:default}
+  button.b:hover:not(:disabled){filter:brightness(1.12)}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .parse-msg{font-size:12.5px;margin-top:10px;min-height:16px}
+  .parse-msg.green{color:#3fcf72}.parse-msg.red{color:var(--red)}.parse-msg.muted{color:var(--muted)}
+  .stats{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0 12px}
+  .stat{flex:1;min-width:120px;border:1px solid var(--line);background:var(--panel);padding:10px 12px}
+  .stat .n{font-size:21px;color:var(--green);letter-spacing:1px}
+  .stat .l{font-size:10px;color:var(--muted);letter-spacing:1px;margin-top:2px}
+  .stat.alive .n{color:#3fcf72}.stat.err .n{color:var(--red)}.stat.scan .n{color:var(--amber)}
+  .progress{height:6px;background:#0c1a0e;border:1px solid var(--line);margin:6px 0 16px;overflow:hidden}
+  .progress>i{display:block;height:100%;background:linear-gradient(90deg,var(--green-dim),var(--green));width:0%}
+  .controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+  .auto{display:flex;gap:6px;align-items:center;color:var(--muted);font-size:12px;margin-left:auto}
+  .filters{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+  .chip{font-size:11px;padding:6px 11px;border:1px solid var(--line);color:var(--muted);cursor:pointer;letter-spacing:.5px}
+  .chip.active{border-color:var(--green);color:var(--green);background:rgba(34,160,86,.08)}
+  .search{flex:1;min-width:160px;background:#070f07;border:1px solid var(--line);color:var(--txt);font-family:inherit;font-size:12px;padding:7px 10px;outline:none}
+  .search:focus{border-color:var(--green)}
+  .mlist{display:flex;flex-direction:column;gap:4px}
+  .mrow{display:grid;grid-template-columns:12px 70px 1fr auto auto;gap:12px;align-items:center;padding:9px 12px;border:1px solid var(--line);background:var(--panel);cursor:pointer;font-size:12.5px}
+  .mrow:hover{border-color:var(--green)}
+  .mrow.alive{border-left:3px solid #3fcf72;background:rgba(63,207,114,.05)}
+  .mrow.invalid{opacity:.5}
+  .mdot{width:10px;height:10px;border-radius:50%;background:var(--muted)}
+  .mdot.alive{background:#3fcf72;box-shadow:0 0 7px #3fcf72}.mdot.scan{background:var(--amber);box-shadow:0 0 7px var(--amber)}
+  .mdot.err{background:var(--red)}.mdot.pending{background:#244}
+  .mname{color:var(--green);letter-spacing:.5px}
+  .mseed{color:var(--muted);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mmeta{color:var(--muted);font-size:11px;text-align:right;white-space:nowrap}
+  .mmeta.alive{color:#3fcf72;font-weight:700}
+  .mwhen{color:var(--muted);font-size:10px;white-space:nowrap}
+  .pager{display:flex;gap:10px;align-items:center;justify-content:center;margin:14px 0;color:var(--muted);font-size:12px}
+  .pager button{background:rgba(34,160,86,.1);border:1px solid var(--line);color:var(--green);font-family:inherit;padding:5px 12px;cursor:pointer}
+  .pager button:disabled{opacity:.4;cursor:default}
+  .empty{color:var(--muted);font-size:13px;padding:24px;text-align:center;border:1px dashed var(--line)}
+  /* детальная таблица */
+  .detail{margin:14px 0;border:1px solid var(--green-dim);background:var(--panel);padding:14px}
+  .detail.hidden{display:none}
+  .detail-h{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+  .detail-h b{color:var(--green);font-size:14px}
+  .detail-h a{color:var(--muted);cursor:pointer;font-size:12px}
+  .net-group{margin:14px 0}
+  .net-h{font-size:13px;color:var(--green);letter-spacing:1px;border-bottom:1px dashed var(--line);padding-bottom:6px;margin-bottom:8px}
+  .addr-row{display:grid;grid-template-columns:150px 1fr 130px 110px;gap:12px;align-items:center;padding:7px 6px;border-bottom:1px dotted var(--line);font-size:12.5px}
+  .addr-row.alive{background:rgba(63,207,114,.08);border-left:2px solid #3fcf72;padding-left:8px}
+  .ar-std{color:var(--muted);font-size:11px}.ar-addr{color:var(--txt);word-break:break-all;font-size:12px}
+  .ar-bal{color:var(--amber);text-align:right;font-size:12px}.ar-flag{text-align:right;font-size:11px}
+  .ar-flag.alive{color:#3fcf72;font-weight:700}.ar-flag.empty{color:var(--muted)}
+  .tx-link{color:#3fcf72;text-decoration:underline;cursor:pointer}
+  .note{margin-top:22px;color:var(--muted);font-size:11px;line-height:1.6;border-top:1px dashed var(--line);padding-top:12px}
+</style>
+</head>
+<body>
+  <div class="frame">
+    <div class="top">
+      <div class="brand"><div class="emblem">П</div><div><b>ПУХ · МАСС-ПРОВЕРКА</b><span>среда массовой проверки · изолированная</span></div></div>
+      <a href="../">← к панели</a>
+    </div>
+
+    <h1>&gt; МАССОВАЯ ЗАГРУЗКА И ПРОВЕРКА · Режим А</h1>
+    <p class="lead">Загрузи <b>.txt</b> (каждая сид-фраза — отдельной строкой). Каждая сразу станет отдельной задачей с числовым именем (1, 2, 3…) и проверится по <b>всем путям</b>. Авто-перепроверка раз в 24ч полным кругом. Это <b>отдельная среда</b> — её задачи не пересекаются с главной панелью (хранилище IndexedDB).</p>
+
+    <div class="upload">
+      <div class="flabel">&gt; ФАЙЛ СО СПИСКОМ СИД (.txt, по одной в строке)</div>
+      <input type="file" id="file" accept=".txt,text/plain">
+      <textarea id="paste" spellcheck="false" placeholder="…или вставь список сюда — по одной сид-фразе в строку"></textarea>
+      <div class="row" style="margin-top:10px">
+        <button class="b run" id="load">⬆ ЗАГРУЗИТЬ В ЗАДАЧИ</button>
+        <span class="parse-msg muted" id="parse-msg">ничего не загружено</span>
+      </div>
+    </div>
+
+    <div class="stats">
+      <div class="stat"><div class="n" id="s-total">0</div><div class="l">ВСЕГО СИД</div></div>
+      <div class="stat"><div class="n" id="s-done">0</div><div class="l">ПРОВЕРЕНО</div></div>
+      <div class="stat alive"><div class="n" id="s-alive">0</div><div class="l">С АКТИВНОСТЬЮ</div></div>
+      <div class="stat scan"><div class="n" id="s-queue">0</div><div class="l">В ОЧЕРЕДИ</div></div>
+      <div class="stat err"><div class="n" id="s-err">0</div><div class="l">ОШИБКИ/НЕВАЛИД</div></div>
+    </div>
+    <div class="progress"><i id="prog-bar"></i></div>
+
+    <div class="controls">
+      <button class="b run" id="start">▶ СТАРТ ПРОВЕРКИ</button>
+      <button class="b ghost" id="pause" disabled>⏸ ПАУЗА</button>
+      <button class="b danger" id="clear">🗑 ОЧИСТИТЬ ВСЁ</button>
+      <label class="auto"><input type="checkbox" id="auto" checked> авто-перепроверка 24ч</label>
+    </div>
+
+    <div class="detail hidden" id="detail"></div>
+
+    <div class="filters">
+      <span class="chip active" data-f="all">все</span>
+      <span class="chip" data-f="alive">с активностью</span>
+      <span class="chip" data-f="scanning">идёт</span>
+      <span class="chip" data-f="empty">пусто</span>
+      <span class="chip" data-f="pending">в очереди</span>
+      <span class="chip" data-f="error">ошибки/невалид</span>
+      <input class="search" id="search" placeholder="поиск по имени или сид…">
+    </div>
+
+    <div class="mlist" id="mlist"></div>
+    <div class="pager" id="pager"></div>
+
+    <div class="note">Проверяется как в Режиме А: BTC (Legacy/P2SH/SegWit), LTC ×3, DOGE, DASH, ETH (Standard+Ledger на ETH/BSC/Polygon), ETC — ~45 адресов на сид. Баланс/история/«получено когда-либо» через публичные API; на больших объёмах — фоном, с паузой и возобновлением, возможны лимиты провайдеров. Среда изолирована (IndexedDB «puh_mass»), главная панель не затрагивается.</div>
+  </div>
+  <script src="static/bip39.js"></script>
+  <script src="static/checker.js"></script>
+  <script src="static/ethers.umd.min.js"></script>
+  <script src="static/paths.js"></script>
+  <script src="static/mass.js"></script>
+
+<div id="gate" style="position:fixed;inset:0;z-index:9999;background:#050805;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:13px;font-family:'Share Tech Mono',monospace;color:#32c266">
+  <div style="font-size:18px;letter-spacing:3px;text-shadow:0 0 8px rgba(34,160,86,.4)">ПУХ · ROBCO TERMLINK</div>
+  <div style="font-size:12px;color:#386b49;letter-spacing:1px">требуется авторизация</div>
+  <input id="gate-pw" type="password" placeholder="пароль" autofocus autocomplete="off"
+    style="margin-top:8px;padding:12px 14px;background:#0a110b;border:1px solid #143f24;color:#6fbe87;font-family:inherit;font-size:15px;outline:none;width:260px;text-align:center">
+  <button id="gate-go" style="padding:11px 28px;background:#32c266;color:#04130a;border:0;font-family:inherit;font-weight:700;letter-spacing:2px;cursor:pointer">ВОЙТИ</button>
+  <div id="gate-err" style="color:#e85a5a;font-size:12px;min-height:14px"></div>
+  <div style="position:fixed;bottom:14px;font-size:10px;color:#2a4f37;letter-spacing:1px">статичный превью · защита-барьер (не серверная)</div>
+</div>
+<script>
+(function(){
+  var HASH="be3ebb0bf33a4778734e6e189f11989f24e502d5abbf789e213907add6086602";
+  var g=document.getElementById("gate");
+  function open(){ g.style.display="none"; }
+  if(sessionStorage.getItem("puh_gate")==="1"){ open(); return; }
+  function check(){
+    var pw=document.getElementById("gate-pw").value;
+    var h=[].map.call(window.PUHCORE.sha256(new TextEncoder().encode(pw)),function(b){return("0"+b.toString(16)).slice(-2);}).join("");
+    if(h===HASH){ sessionStorage.setItem("puh_gate","1"); open(); }
+    else { document.getElementById("gate-err").textContent="неверный пароль"; document.getElementById("gate-pw").value=""; }
+  }
+  document.getElementById("gate-go").onclick=check;
+  document.getElementById("gate-pw").addEventListener("keydown",function(e){ if(e.key==="Enter") check(); });
+})();
+</script>
+</body>
+</html>

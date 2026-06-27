@@ -31,6 +31,16 @@ if [ -d ../mode-b ]; then
   cp ../mode-b/index.html docs/mode-b/index.html
 fi
 
+# --- Масс-проверка (../mass) ---
+if [ -d ../mass ]; then
+  mkdir -p docs/mass/static
+  cp static/bip39.js static/checker.js docs/mass/static/
+  cp static/vendor/ethers.umd.min.js docs/mass/static/ethers.umd.min.js
+  cp ../mode-a/static/paths.js docs/mass/static/paths.js
+  cp ../mass/static/*.js docs/mass/static/
+  cp ../mass/index.html docs/mass/index.html
+fi
+
 # --- барьер в обе страницы ---
 GATE_HASH="$(cat .gate_hash 2>/dev/null || echo '')"
 GATE_HASH="$GATE_HASH" /root/PUH/.venv/bin/python - <<'PY'
@@ -63,10 +73,10 @@ gate = '''
 })();
 </script>
 '''.replace("__HASH__", gate_hash)
-for p in ("docs/index.html", "docs/mode-a/index.html", "docs/mode-b/index.html"):
+for p in ("docs/index.html", "docs/mode-a/index.html", "docs/mode-b/index.html", "docs/mass/index.html"):
     if os.path.exists(p):
         html = open(p, encoding="utf-8").read().replace("</body>", gate + "</body>")
         open(p, "w", encoding="utf-8").write(html)
 print("барьер встроен" if gate_hash else "ВНИМАНИЕ: .gate_hash пуст — барьер без пароля!")
 PY
-echo "docs/ собран: панель + $( [ -d ../mode-a ] && echo 'Режим А' ) + $( [ -d ../mode-b ] && echo 'Режим Б' )"
+echo "docs/ собран: панель + $( [ -d ../mode-a ] && echo 'Режим А' ) + $( [ -d ../mode-b ] && echo 'Режим Б' ) + $( [ -d ../mass ] && echo 'Масс-проверка' )"
