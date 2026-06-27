@@ -145,6 +145,7 @@
     save(all);
     lastRows = null; $("report").innerHTML = ""; $("summary").innerHTML = "";
     var btn = $("run"); btn.disabled = true; btn.textContent = "⏳ ИДЁТ В ФОНЕ…";
+    $("close-task").textContent = "✕ ЗАКРЫТЬ В ТРЕЙ (работает в фоне)";
     $("close-task").classList.remove("hidden");   // «закрыть в трей» доступна сразу
     renderShown(); renderTaskList();
     scanLoop(curId);
@@ -167,6 +168,7 @@
     if (t.changed) updateTask(id, { changed: false });
     lastRows = running[id] ? lastRows : fatten(t.results);
     renderShown();
+    $("close-task").textContent = running[id] ? "✕ ЗАКРЫТЬ В ТРЕЙ (работает в фоне)" : "✕ ЗАКРЫТЬ";
     $("close-task").classList.remove("hidden"); $("alert").classList.add("hidden");
     if (!running[id]) {
       var st = $("seed-status"); st.className = "vstatus green";

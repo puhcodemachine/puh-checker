@@ -192,16 +192,35 @@
   window.renderDB = function () {
     store.list().then(function (tasks) {
       var el = $("db-list"); if (!el) return;
-      if (!tasks.length) { el.innerHTML = '<div class="td-empty">база пуста — создай задание</div>'; return; }
+      if (!tasks.length) { el.innerHTML = '<div class="td-empty">база пуста</div>'; return; }
       el.innerHTML = tasks.map(function (t) {
-        var si = statusInfo(t.status);
-        return '<div class="db-row" onclick="openTask(\'' + t.id + '\')">' +
-          '<span class="db-lamp lamp ' + si.lamp + '"></span>' +
-          '<span class="db-name">' + esc(t.name) + '</span>' +
-          '<span class="db-meta">' + (t.results || 0) + ' сид · ' + si.txt + '</span>' +
-          '<span class="db-caret">→</span></div>';
+        var a = t.mode === "A";
+        var meta = a ? "активность · живых " + (t.alive || 0) : (t.results || 0) + " вариантов · перебор";
+        var stat = t.deleted ? "удалено" : t.status === "running" ? "идёт" : t.status === "red" ? "остановлено" : t.status === "amber" ? "пауза/проверка" : "ок";
+        return '<div class="db-item"><div class="db-row" onclick="dbToggle(this,\'' + t.id + '\')">' +
+          '<span class="mode-badge ' + (a ? "a" : "") + '">' + (a ? "А" : "Б") + "</span>" +
+          '<span class="db-name">' + esc(t.name) + (t.deleted ? ' <span class="db-del">(удалено)</span>' : "") + "</span>" +
+          '<span class="db-meta">' + meta + " · " + stat + "</span>" +
+          '<span class="db-caret">▾</span></div>' +
+          '<div class="db-log hidden" data-id="' + t.id + '" data-loaded="0"></div></div>';
       }).join("");
     });
+  };
+  window.dbToggle = function (head, id) {
+    var log = head.nextElementSibling;
+    var nowHidden = log.classList.toggle("hidden");
+    head.querySelector(".db-caret").textContent = nowHidden ? "▾" : "▴";
+    if (!nowHidden && log.getAttribute("data-loaded") === "0") {
+      log.setAttribute("data-loaded", "1");
+      store.get(id).then(function (t) {
+        var lg = (t && t.log) || [];
+        var inner = lg.length
+          ? lg.map(function (e) { return '<div class="db-log-row"><span class="ts">' + fmtDateTime(e.ts) + "</span><span>" + esc(e.msg) + "</span></div>"; }).join("")
+          : '<div class="td-empty">журнал пуст</div>';
+        inner += '<div style="padding:8px 12px"><a href="javascript:void(0)" onclick="openTask(\'' + id + '\')" class="tx-link">↗ открыть задание полностью</a></div>';
+        log.innerHTML = inner;
+      });
+    }
   };
 
   function explorerUrl(coin, chains, addr) {

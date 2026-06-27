@@ -144,14 +144,20 @@
   .btn-continue:hover{background:var(--amber);color:#1a1406;box-shadow:0 0 16px rgba(232,183,58,.35)}
 
   /* база данных — список заданий строками */
-  .db-list{display:flex;flex-direction:column;gap:6px;max-width:920px}
-  .db-row{display:grid;grid-template-columns:14px 1fr auto 20px;gap:14px;align-items:center;
-    padding:12px 14px;border:1px solid var(--line);background:var(--panel);cursor:pointer;transition:.12s}
-  .db-row:hover{border-color:var(--green);box-shadow:0 0 12px rgba(34,160,86,.15);transform:translateX(2px)}
-  .db-lamp{width:11px;height:11px}
+  .db-list{display:flex;flex-direction:column;gap:6px;max-width:960px}
+  .db-item{border:1px solid var(--line);background:var(--panel)}
+  .db-row{display:grid;grid-template-columns:auto 1fr auto 20px;gap:14px;align-items:center;
+    padding:12px 14px;cursor:pointer;transition:.12s}
+  .db-row:hover{background:rgba(34,160,86,.05)}
   .db-name{color:var(--green);font-size:15px;letter-spacing:.5px}
+  .db-del{color:var(--muted);font-size:12px}
   .db-meta{color:var(--muted);font-size:12px}
   .db-caret{color:var(--green);text-align:center}
+  .db-log{padding:6px 12px 12px;border-top:1px dashed var(--line);background:rgba(0,0,0,.15)}
+  .db-log.hidden{display:none}
+  .db-log-row{display:grid;grid-template-columns:185px 1fr;gap:14px;padding:5px 4px;font-size:12px;
+    border-bottom:1px dotted var(--line);color:var(--txt)}
+  .db-log-row .ts{color:var(--muted)}
 
   /* режим-бейдж + отчёт адресов (Режим А) */
   .mode-badge{font-size:10px;padding:1px 6px;border:1px solid var(--green-dim);border-radius:3px;color:var(--green);letter-spacing:1px;margin-left:4px}
@@ -384,6 +390,7 @@
           <div class="tab active" data-target="home" onclick="selTab(this)"><span class="ico">⌂</span>ГЛАВНАЯ</div>
           <div class="tab" onclick="location.href='mode-a/'"><span class="ico">◎</span>РЕЖИМ А</div>
           <div class="tab" data-target="new" onclick="selTab(this)"><span class="ico">⟲</span>РЕЖИМ Б</div>
+          <div class="tab" data-target="db" onclick="selTab(this)"><span class="ico">▦</span>БАЗА ДАННЫХ</div>
         </nav>
         <div class="workspace">
 
@@ -428,12 +435,8 @@
             <button class="btn-start" id="btn-start">▶ НАЧАТЬ ПЕРЕБОР</button>
           </section>
 
-          <section class="pane hidden" data-pane="edit">
-            <div class="placeholder">[ ИЗМЕНИТЬ ЗАДАНИЕ — раздел в разработке ]</div>
-          </section>
-
           <section class="pane hidden" data-pane="db">
-            <div class="flabel" style="font-size:14px;margin-bottom:14px">&gt; БАЗА ДАННЫХ · все задания (клик → полная история и все сид)</div>
+            <div class="flabel" style="font-size:14px;margin-bottom:14px">&gt; БАЗА ДАННЫХ · все задания (А/Б) · клик → лог работы</div>
             <div id="db-list" class="db-list"></div>
           </section>
 
