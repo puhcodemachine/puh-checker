@@ -78,6 +78,24 @@
   .mt-meta{color:var(--muted);font-size:11px}
   .mt-when{color:var(--muted);font-size:11px}
   .mt-caret{color:var(--green);text-align:center}
+  #ba-view.hidden,#single-mode.hidden{display:none}
+  .ba-badge{display:inline-block;font-size:9px;font-weight:700;letter-spacing:1px;padding:1px 5px;margin-right:7px;
+    border:1px solid var(--amber);color:var(--amber);border-radius:3px;vertical-align:middle}
+  .bc-item{border:1px solid var(--line);background:var(--panel);margin-bottom:5px}
+  .bc-head{display:grid;grid-template-columns:34px 16px 1fr auto 18px;gap:11px;align-items:center;padding:9px 13px;cursor:pointer}
+  .bc-head:hover{background:rgba(34,160,86,.05)}
+  .bc-item.alive{border-left:3px solid #3fcf72}
+  .bc-item.alive .bc-head{background:rgba(63,207,114,.07)}
+  .bc-num{color:var(--muted);font-size:12px}
+  .bc-dot{width:10px;height:10px;border-radius:50%;background:var(--muted)}
+  .bc-dot.alive{background:#3fcf72;box-shadow:0 0 8px #3fcf72}.bc-dot.scan{background:var(--amber);box-shadow:0 0 7px var(--amber)}
+  .bc-phrase{color:var(--txt);font-size:12.5px;word-break:break-word}
+  .bc-nm{color:#3fcf72;font-weight:700;font-size:10px;margin-left:6px}
+  .bc-meta{color:var(--muted);font-size:11px;text-align:right;white-space:nowrap}
+  .bc-meta.alive{color:#3fcf72;font-weight:700}
+  .bc-caret{color:var(--green);text-align:center}
+  .bc-body{padding:4px 13px 12px;border-top:1px dashed var(--line)}
+  .bc-body.hidden{display:none}
 </style>
 </head>
 <body>
@@ -93,6 +111,7 @@
       <div id="task-list" class="ma-task-list"></div>
     </div>
 
+    <div id="single-mode">
     <h1 id="form-h1">&gt; ГЛУБОКАЯ ПРОВЕРКА · все пути развёртывания</h1>
     <p class="lead">Вставь <b>валидную</b> сид-фразу. Я выведу адреса по всем известным путям — <b>BTC</b> (Legacy/P2SH-SegWit/SegWit), <b>LTC</b> (3 формата), <b>DOGE</b>, <b>DASH</b>, <b>ETH</b> (Standard + Ledger Live, проверка на ETH/BSC/Polygon), <b>ETC</b> — и проверю каждый на активность: баланс, <b>историю</b> и <b>когда-либо полученные средства</b>. Любой след = адрес живой. Все адреса сверены с bip_utils.</p>
 
@@ -110,6 +129,17 @@
     <div class="scanline" id="scanline"></div>
     <div id="summary"></div>
     <div id="report"></div>
+    </div>
+
+    <div id="ba-view" class="hidden">
+      <h1 id="ba-title">&gt; Б → А · пакетная проверка вариаций</h1>
+      <div class="summary" id="ba-summary"></div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin:14px 0">
+        <button class="close-task" id="ba-close">✕ ЗАКРЫТЬ В ТРЕЙ (работает в фоне)</button>
+        <button class="close-task" id="ba-stop">■ ОСТАНОВИТЬ</button>
+      </div>
+      <div id="ba-list"></div>
+    </div>
 
     <div class="note">Проверяется: BTC (Legacy/P2SH/SegWit ×5), LTC (3 формата ×3), DOGE, DASH, ETH (Standard+Ledger ×5, на ETH/BSC/Polygon), ETC — первые адреса каждого пути (~45 адресов). Активность через публичные API (blockchair для UTXO — поле «получено когда-либо», RPC для EVM); best-effort, возможны лимиты. <b>TODO:</b> BTC Taproot (BIP86), BCH (cashaddr), Monero, проверка на уровне аккаунта (xpub) для полного покрытия индексов, passphrase (25-е слово).</div>
   </div>

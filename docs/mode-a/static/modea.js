@@ -37,7 +37,7 @@
 
   // ---------- рендер отчёта ----------
   function aliveCount(results) { return (results || []).filter(function (r) { return r.alive; }).length; }
-  function render(rows) {
+  function buildReport(rows) {
     var coins = ["BTC", "LTC", "DOGE", "DASH", "ETH", "ETC"], html = "";
     coins.forEach(function (coin) {
       var rs = rows.filter(function (r) { return r.coin === coin; }); if (!rs.length) return;
@@ -53,14 +53,16 @@
       });
       html += "</div>";
     });
-    $("report").innerHTML = html;
+    return html;
   }
+  function render(rows) { $("report").innerHTML = buildReport(rows); }
 
   // ---------- хранилище (общее с панелью) ----------
   var LS = "puh_tasks", curId = null, lastRows = null, running = {};
   function load() { try { return JSON.parse(localStorage.getItem(LS)) || []; } catch (e) { return []; } }
   function save(a) { try { localStorage.setItem(LS, JSON.stringify(a)); } catch (e) {} }
   function onlyA(a) { return (a || []).filter(function (t) { return t.mode === "A" && !t.deleted; }); }
+  function onlyAB(a) { return (a || []).filter(function (t) { return (t.mode === "A" || t.mode === "BA") && !t.deleted; }); }
   function byId(id) { return load().filter(function (t) { return t.id === id; })[0]; }
   function updateTask(id, patch) { var all = load(); all.forEach(function (t) { if (t.id === id) for (var k in patch) t[k] = patch[k]; }); save(all); }
   function slim(rows) { return rows.map(function (r) { var a = r.act || {}; return { coin: r.coin, std: r.std, path: r.path, addr: r.addr, bal: a.bal, received: a.received, txn: a.txn, alive: !!a.alive, chains: a.chains || "" }; }); }
@@ -69,15 +71,20 @@
 
   function showAlert(msg) { var el = $("alert"); el.textContent = msg; el.classList.remove("hidden"); }
   function renderTaskList() {
-    var tasks = onlyA(load()), wrap = $("tasks-wrap"), el = $("task-list");
+    var tasks = onlyAB(load()), wrap = $("tasks-wrap"), el = $("task-list");
     if (!tasks.length) { wrap.classList.add("hidden"); return; }
     wrap.classList.remove("hidden");
     el.innerHTML = tasks.map(function (t) {
-      var run = t.status === "running", alive = t.alive || 0, dot = t.changed ? "changed" : run ? "hit" : (alive ? "hit" : "");
-      var meta = run ? "● идёт проверка " + (t.progress || "") : (alive ? "● живых: " + alive : "пусто") + (t.changed ? " · ⚠ ИЗМЕНЕНИЕ" : "");
-      return '<div class="ma-task-row' + (t.changed ? " changed" : "") + (alive ? " hit" : "") + '" onclick="maOpen(\'' + t.id + '\')">' +
+      var run = t.status === "running", alive = t.alive || 0, ba = t.mode === "BA";
+      var hit = ba ? (t.hits || 0) > 0 : alive > 0;
+      var dot = t.changed ? "changed" : (run || hit) ? "hit" : "";
+      var meta;
+      if (ba) meta = run ? "● проверка вариаций " + (t.progress || "") : ((t.hits || 0) ? "● ЖИВЫХ ВАРИАЦИЙ: " + t.hits : "пусто · " + ((t.candidates || []).length) + " вар.");
+      else meta = run ? "● идёт проверка " + (t.progress || "") : (alive ? "● живых: " + alive : "пусто") + (t.changed ? " · ⚠ ИЗМЕНЕНИЕ" : "");
+      var badge = ba ? '<span class="ba-badge">Б→А</span>' : "";
+      return '<div class="ma-task-row' + (t.changed ? " changed" : "") + (hit ? " hit" : "") + '" onclick="maOpen(\'' + t.id + '\')">' +
         '<span class="mt-dot ' + dot + '"></span>' +
-        '<span class="mt-name">' + esc(t.name) + '</span>' +
+        '<span class="mt-name">' + badge + esc(t.name) + '</span>' +
         '<span class="mt-meta">' + meta + '</span>' +
         '<span class="mt-when">' + (t.lastCheck ? "пров.: " + fmtDT(t.lastCheck) : "—") + '</span>' +
         '<span class="mt-caret">→</span></div>';
@@ -125,6 +132,94 @@
     step();
   }
 
+  // ---------- пакетный скан Б→А (все вариации, полная проверка всех путей) ----------
+  var baExpand = {};   // id -> {candIndex: true} раскрытые вариации
+  function baTotals(t) {
+    var c = t.candidates || [];
+    return { total: c.length, done: c.filter(function (x) { return x.done; }).length,
+      hits: c.filter(function (x) { return (x.alive || 0) > 0; }).length,
+      aliveAddr: c.reduce(function (s, x) { return s + (x.alive || 0); }, 0) };
+  }
+  function firstUndone(t) { var c = t.candidates || []; for (var i = 0; i < c.length; i++) if (!c[i].done) return i; return -1; }
+  function scanBatch(id) {
+    if (running[id]) return;
+    var t = byId(id); if (!t || t.mode !== "BA" || !window.PUHPATHS) return;
+    running[id] = true;
+    (function nextCand() {
+      var cur = byId(id);
+      if (!cur || cur.status === "red" || cur.deleted) { delete running[id]; if (curId === id) renderBAOpen(id); renderTaskList(); return; }
+      var ci = firstUndone(cur);
+      if (ci < 0) {
+        var tt = baTotals(cur);
+        updateTask(id, { status: tt.hits ? "amber" : "green", lastCheck: nowSec(), progress: tt.total + "/" + tt.total, hits: tt.hits, alive: tt.aliveAddr });
+        delete running[id]; if (curId === id) renderBAOpen(id); renderTaskList(); return;
+      }
+      scanCand(id, ci, nextCand);
+    })();
+  }
+  function scanCand(id, ci, done) {
+    var cand = byId(id).candidates[ci];
+    var rows = window.PUHPATHS.matrix(); rows.forEach(function (r) { r.addr = window.PUHPATHS.deriveOne(r, cand.phrase); });
+    var j = 0;
+    (function step() {
+      var cur = byId(id);
+      if (!cur || cur.status === "red" || cur.deleted) { delete running[id]; if (curId === id) renderBAOpen(id); renderTaskList(); return; }
+      if (j >= rows.length) {
+        var results = slim(rows), alive = aliveCount(results);
+        var all = load(); all.forEach(function (x) {
+          if (x.id === id) { var c = x.candidates[ci]; c.results = results; c.alive = alive; c.done = true;
+            var tt = baTotals(x); x.progress = tt.done + "/" + tt.total; x.hits = tt.hits; x.alive = tt.aliveAddr; if (alive) x.changed = true; }
+        }); save(all);
+        if (alive) showAlert("⚠ НАЙДЕНА АКТИВНОСТЬ в «" + cur.name + "»: вариация #" + (ci + 1) + " — " + alive + " адрес(ов)!");
+        if (curId === id) renderBAOpen(id); renderTaskList();
+        return done();
+      }
+      var r = rows[j];
+      if (!r.addr) { j++; return setTimeout(step, 5); }
+      checkAct(r).then(function (a) { r.act = a; j++;
+        if (curId === id) renderBAPartial(id, ci, rows, j);
+        setTimeout(step, 220);
+      }).catch(function () { j++; setTimeout(step, 220); });
+    })();
+  }
+  function renderBAOpen(id) {
+    var t = byId(id); if (!t) return;
+    $("single-mode").classList.add("hidden"); $("ba-view").classList.remove("hidden");
+    var run = !!running[id], tt = baTotals(t), uci = firstUndone(t);
+    $("ba-title").innerHTML = '&gt; <span class="ba-badge">Б→А</span> ' + esc(t.name) + " · пакетная проверка вариаций";
+    var sum = $("ba-summary"); sum.className = "summary " + (tt.hits ? "hit" : "miss");
+    sum.innerHTML = (run ? "⏳ идёт проверка в фоне… " : "") + "вариаций: <b>" + tt.total + "</b> · проверено: <b>" + tt.done + "/" + tt.total + "</b> · живых вариаций: <b>" + tt.hits + "</b>" + (tt.hits ? " — ✓ ЕСТЬ НАХОДКА" : (run ? "" : " · активности нет"));
+    $("ba-close").textContent = run ? "✕ ЗАКРЫТЬ В ТРЕЙ (работает в фоне)" : "✕ ЗАКРЫТЬ";
+    $("ba-stop").style.display = run ? "" : "none";
+    $("ba-close").setAttribute("data-id", id); $("ba-stop").setAttribute("data-id", id);
+    var exp = baExpand[id] || (baExpand[id] = {});
+    $("ba-list").innerHTML = (t.candidates || []).map(function (c, i) {
+      var alive = (c.alive || 0) > 0, scanning = run && !c.done && i === uci;
+      var dot = alive ? "alive" : scanning ? "scan" : "";
+      var meta = c.done ? (alive ? "● ЖИВЫХ АДРЕСОВ: " + c.alive : "пусто") : scanning ? "проверка…" : "в очереди";
+      var nm = c.numMatch ? '<span class="bc-nm">✓ по цифрам</span>' : "";
+      var bodyInner = c.results && c.results.length ? buildReport(fatten(c.results)) : '<div class="ar-std" style="padding:8px">ещё не проверено</div>';
+      return '<div class="bc-item' + (alive ? " alive" : "") + '">' +
+        '<div class="bc-head" onclick="baToggle(\'' + id + '\',' + i + ')">' +
+        '<span class="bc-num">#' + (i + 1) + '</span><span class="bc-dot ' + dot + '"></span>' +
+        '<span class="bc-phrase">' + esc(c.phrase) + nm + "</span>" +
+        '<span class="bc-meta' + (alive ? " alive" : "") + '">' + meta + "</span>" +
+        '<span class="bc-caret">' + (exp[i] ? "▴" : "▾") + "</span></div>" +
+        '<div class="bc-body' + (exp[i] ? "" : " hidden") + '">' + bodyInner + "</div></div>";
+    }).join("");
+  }
+  function renderBAPartial(id, ci, rows, j) {
+    var t = byId(id); if (!t) return; var tt = baTotals(t);
+    var sum = $("ba-summary"); if (sum) sum.innerHTML = "⏳ идёт проверка в фоне… вариаций: <b>" + tt.total + "</b> · проверено: <b>" + tt.done + "/" + tt.total + "</b> (вариация #" + (ci + 1) + ", путь " + j + "/" + rows.length + ") · живых: <b>" + tt.hits + "</b>";
+    var exp = baExpand[id] || {};
+    if (exp[ci]) { var bodies = $("ba-list").getElementsByClassName("bc-body"); if (bodies[ci]) bodies[ci].innerHTML = buildReport(rows); }
+  }
+  window.baToggle = function (id, i) { var exp = baExpand[id] || (baExpand[id] = {}); exp[i] = !exp[i]; renderBAOpen(id); };
+  function baCollapse() {
+    $("ba-view").classList.add("hidden"); $("single-mode").classList.remove("hidden");
+    curId = null; renderTaskList(); window.scrollTo(0, 0);
+  }
+
   // ---------- старт проверки (создаёт фоновую задачу сразу) ----------
   function startCheck() {
     var C = window.PUHCORE, seed = ($("seed").value || "").trim().toLowerCase().replace(/\s+/g, " ");
@@ -163,6 +258,8 @@
 
   window.maOpen = function (id) {
     var t = byId(id); if (!t) return;
+    if (t.mode === "BA") { curId = id; if (t.changed) updateTask(id, { changed: false }); $("alert").classList.add("hidden"); renderBAOpen(id); renderTaskList(); window.scrollTo(0, 0); return; }
+    $("ba-view").classList.add("hidden"); $("single-mode").classList.remove("hidden");
     var rb = $("run"); rb.disabled = false; rb.textContent = "▶ ПРОВЕРИТЬ ВСЕ ПУТИ";
     curId = id; $("name").value = t.name; $("seed").value = t.seed;
     if (t.changed) updateTask(id, { changed: false });
@@ -184,7 +281,7 @@
       if (t.status !== "running" && nowSec() - (t.lastCheck || 0) > 86400) scanLoop(t.id);
     });
   }
-  function resumeRunning() { onlyA(load()).forEach(function (t) { if (t.status === "running" && !running[t.id]) scanLoop(t.id); }); }
+  function resumeRunning() { onlyAB(load()).forEach(function (t) { if (t.status === "running" && !running[t.id]) { t.mode === "BA" ? scanBatch(t.id) : scanLoop(t.id); } }); }
   function dedupeStore() {
     var all = load(), seen = {}, out = [], changed = false;
     all.forEach(function (t) {
@@ -199,6 +296,8 @@
     ta.addEventListener("input", function () { var C = window.PUHCORE; if (!C) return; var el = $("seed-status"); if (!ta.value.trim()) { el.className = "vstatus muted"; el.textContent = "введите сид-фразу"; return; } var v = C.validateWords((ta.value || "").trim().toLowerCase()); el.className = "vstatus " + v.level; el.textContent = v.msg; });
     $("run").addEventListener("click", startCheck);
     $("close-task").addEventListener("click", saveAndContinue);
+    $("ba-close").addEventListener("click", baCollapse);
+    $("ba-stop").addEventListener("click", function () { var id = this.getAttribute("data-id"); window.maStop(id); renderBAOpen(id); });
     dedupeStore(); renderTaskList(); resumeRunning(); dueCheck();
     // открыть конкретную задачу по ?open=id (из панели «редактировать»)
     var mq = location.search.match(/[?&]open=([0-9a-f]+)/);

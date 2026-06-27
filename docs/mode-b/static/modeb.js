@@ -46,6 +46,28 @@
         '<a class="toA" href="' + aLink(k.phrase) + '">→ проверить в Режиме А ↗</a></div></div>';
     }).join("");
     $("save").classList.toggle("hidden", !cands.length);
+    $("toA").classList.toggle("hidden", !cands.length);
+  }
+
+  function toModeA() {
+    if (!lastCands || !lastCands.length) return;
+    var all = load(), now = nowSec();
+    var words = ($("words").value || "").trim().toLowerCase().replace(/\s+/g, " ");
+    var nums = ($("nums").value || "").trim();
+    var name = ($("name").value || "").trim() || "Восстановление " + (onlyB(all).length + 1);
+    var cands = lastCands.slice().sort(function (a, b) { if (!!a.numMatch !== !!b.numMatch) return a.numMatch ? -1 : 1; return (a.cost || 0) - (b.cost || 0); })
+      .map(function (k) { return { phrase: k.phrase, cost: k.cost || 0, numMatch: !!k.numMatch, done: false, alive: 0, results: [] }; });
+    var id = null;
+    all.forEach(function (t) { if (t.mode === "BA" && t.name === name && (t.candidates || []).length === cands.length) id = t.id; });
+    var log = [{ ts: now, msg: "Б→А: запущена проверка " + cands.length + " вариаций по всем путям" }];
+    if (id) {
+      all.forEach(function (t) { if (t.id === id) { t.candidates = cands; t.status = "running"; t.started = now; t.progress = "0/" + cands.length; t.hits = 0; t.alive = 0; t.lastCheck = null; t.changed = false; t.log = log; } });
+    } else {
+      id = Math.random().toString(16).slice(2, 8);
+      all.push({ id: id, name: name, mode: "BA", fromB: true, type: "Б→А · вариаций " + cands.length, status: "running", candidates: cands, words: words, nums: nums, alive: 0, hits: 0, progress: "0/" + cands.length, created: now, started: now, lastCheck: null, changed: false, log: log });
+    }
+    save(all);
+    location.href = "../mode-a/?open=" + id;
   }
 
   function run() {
@@ -107,6 +129,7 @@
         '<a class="toA" href="' + aLink(r.phrase) + '">→ проверить в Режиме А ↗</a></div></div>';
     }).join("");
     $("save").classList.remove("hidden");
+    $("toA").classList.remove("hidden");
     window.scrollTo(0, ($("form-h1") || {}).offsetTop || 0);
   };
 
@@ -121,6 +144,7 @@
     });
     $("run").addEventListener("click", run);
     $("save").addEventListener("click", saveTask);
+    $("toA").addEventListener("click", toModeA);
     renderTaskList();
   });
 })();

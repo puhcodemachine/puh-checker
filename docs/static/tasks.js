@@ -49,6 +49,7 @@
     return { id: t.id, name: t.name, type: t.type, status: t.status, modes: t.modes,
              created: t.created, started: t.started, stopped: t.stopped, pausedAt: t.pausedAt,
              mode: t.mode || "B", alive: t.alive || 0, lastCheck: t.lastCheck, progress: t.progress,
+             hits: t.hits || 0, candidates: (t.candidates || []).length, fromB: t.fromB,
              deleted: t.deleted, results: (t.results || []).length };
   }
   function lsCreate(p) {
@@ -163,8 +164,20 @@
       '<div class="task-meta"><span>ЗАПУСК<span class="v">' + clock(t.started) + '</span></span>' +
       '<span style="text-align:right">ПРОВЕРЕНО<span class="v">' + (t.lastCheck ? clock(t.lastCheck) : "--:--:--") + '</span></span></div></div>';
   }
+  function cardHtmlBA(t) {
+    var run = t.status === "running", hits = t.hits || 0;
+    var lamp = run ? "green" : t.status === "red" ? "red" : (hits ? "green" : "amber");
+    var st = run ? "● проверка вариаций " + (t.progress || "") : t.status === "red" ? "■ остановлено" : (hits ? "● ЖИВЫХ ВАРИАЦИЙ: " + hits : "проверено · пусто");
+    return '<div class="task" data-id="' + t.id + '" onclick="openTask(\'' + t.id + '\')">' +
+      '<div class="task-top"><span class="task-name">' + esc(t.name) + ' <span class="mode-badge ba">Б→А</span></span><span class="lamp ' + lamp + '"></span></div>' +
+      '<div class="task-status ' + lamp + '">' + st + '</div>' +
+      '<div class="task-type">тип: ' + esc(t.type || ("Б→А · вариаций " + (t.candidates || 0))) + '</div>' +
+      '<div class="task-meta"><span>ЗАПУСК<span class="v">' + clock(t.started) + '</span></span>' +
+      '<span style="text-align:right">ПРОВЕРЕНО<span class="v">' + (t.lastCheck ? clock(t.lastCheck) : "--:--:--") + '</span></span></div></div>';
+  }
   function cardHtml(t) {
     if (t.mode === "A") return cardHtmlA(t);
+    if (t.mode === "BA") return cardHtmlBA(t);
     var si = statusInfo(t.status);
     return '<div class="task" data-id="' + t.id + '" onclick="openTask(\'' + t.id + '\')">' +
       '<div class="task-top"><span class="task-name">' + esc(t.name) + ' <span class="mode-badge">Б</span></span><span class="lamp ' + si.lamp + '"></span></div>' +
@@ -194,11 +207,13 @@
       var el = $("db-list"); if (!el) return;
       if (!tasks.length) { el.innerHTML = '<div class="td-empty">база пуста</div>'; return; }
       el.innerHTML = tasks.map(function (t) {
-        var a = t.mode === "A";
-        var meta = a ? "активность · живых " + (t.alive || 0) : (t.results || 0) + " вариантов · перебор";
+        var a = t.mode === "A", ba = t.mode === "BA";
+        var meta = ba ? "Б→А · вариаций " + (t.candidates || 0) + " · живых " + (t.hits || 0)
+          : a ? "активность · живых " + (t.alive || 0) : (t.results || 0) + " вариантов · перебор";
         var stat = t.deleted ? "удалено" : t.status === "running" ? "идёт" : t.status === "red" ? "остановлено" : t.status === "amber" ? "пауза/проверка" : "ок";
+        var badge = ba ? '<span class="mode-badge ba">Б→А</span>' : '<span class="mode-badge ' + (a ? "a" : "") + '">' + (a ? "А" : "Б") + "</span>";
         return '<div class="db-item"><div class="db-row" onclick="dbToggle(this,\'' + t.id + '\')">' +
-          '<span class="mode-badge ' + (a ? "a" : "") + '">' + (a ? "А" : "Б") + "</span>" +
+          badge +
           '<span class="db-name">' + esc(t.name) + (t.deleted ? ' <span class="db-del">(удалено)</span>' : "") + "</span>" +
           '<span class="db-meta">' + meta + " · " + stat + "</span>" +
           '<span class="db-caret">▾</span></div>' +
@@ -345,6 +360,7 @@
   window.openTask = function (id) {
     curOpen = id;
     store.get(id).then(function (t) {
+      if (t && t.mode === "BA") { location.href = "mode-a/?open=" + id; return; }   // Б→А открывается в Режиме А
       if (t) { renderDetail(t); $("task-detail").classList.remove("hidden"); }
       else flash("задание не найдено");
     });
