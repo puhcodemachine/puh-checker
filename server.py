@@ -18,14 +18,37 @@ import time
 import urllib.parse
 from http import cookies
 
+from cryptography.fernet import Fernet, InvalidToken
+
 BASE = os.path.dirname(os.path.abspath(__file__))
 AUTH_PATH = os.path.join(BASE, "auth.json")
 TPL_DIR = os.path.join(BASE, "templates")
 DATA_DIR = os.path.join(BASE, "data")
 TASKS_PATH = os.path.join(DATA_DIR, "tasks.json")
+KEY_PATH = os.path.join(BASE, ".enc_key")
 PORT = int(os.environ.get("PUH_PORT", "8777"))
-SESSIONS = {}  # sid -> username (in-memory)
+SESSIONS = {}            # sid -> {"user":.., "exp":..}
+LOGIN_FAILS = {}         # ip -> [count, window_start]
 LOCK = threading.Lock()  # сериализация записи задач
+
+SESSION_TTL = 12 * 3600                          # сессия живёт 12 часов
+SECURE_COOKIE = bool(os.environ.get("PUH_HTTPS"))  # на проде с HTTPS: PUH_HTTPS=1
+MAX_BODY = 2_000_000                             # лимит тела запроса (анти-DoS)
+MAX_LOGIN_FAILS = 8                              # блок после N неудач за окно
+LOGIN_WINDOW = 600                               # окно блокировки, сек
+
+
+def _enc_key():
+    """Ключ шифрования хранилища: файл .enc_key (chmod 600, в .gitignore)."""
+    if not os.path.exists(KEY_PATH):
+        with open(KEY_PATH, "wb") as f:
+            f.write(Fernet.generate_key())
+        os.chmod(KEY_PATH, 0o600)
+    with open(KEY_PATH, "rb") as f:
+        return f.read()
+
+
+FERNET = Fernet(_enc_key())
 
 
 def load_auth():
@@ -36,18 +59,31 @@ def load_auth():
 # ---------- хранилище заданий (data/tasks.json — В .gitignore, содержит seed) ----------
 def load_tasks():
     try:
-        with open(TASKS_PATH, encoding="utf-8") as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
+        with open(TASKS_PATH, "rb") as f:
+            blob = f.read()
+    except FileNotFoundError:
+        return []
+    if not blob:
+        return []
+    try:
+        data = FERNET.decrypt(blob)          # шифр на диске
+    except InvalidToken:
+        data = blob                          # миграция: старый открытый JSON
+    try:
+        return json.loads(data)
+    except json.JSONDecodeError:
         return []
 
 
 def save_tasks(tasks):
     os.makedirs(DATA_DIR, exist_ok=True)
+    os.chmod(DATA_DIR, 0o700)
+    blob = FERNET.encrypt(json.dumps(tasks, ensure_ascii=False).encode("utf-8"))
     tmp = TASKS_PATH + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(tasks, f, ensure_ascii=False)
-    os.replace(tmp, TASKS_PATH)
+    with open(tmp, "wb") as f:
+        f.write(blob)
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, TASKS_PATH)              # tasks.json на диске — зашифрован
 
 
 def task_summary(t):
@@ -73,14 +109,37 @@ def tpl(name):
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
+    server_version = "PUH"      # не палим версию http.server
+    sys_version = ""
+
     def log_message(self, *a):  # тише в логах
         pass
+
+    def end_headers(self):      # заголовки безопасности на КАЖДЫЙ ответ
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("X-Robots-Tag", "noindex, nofollow")
+        self.send_header("Permissions-Policy", "geolocation=(), camera=(), microphone=()")
+        super().end_headers()
 
     def _user(self):
         raw = self.headers.get("Cookie", "")
         jar = cookies.SimpleCookie(raw)
         sid = jar["sid"].value if "sid" in jar else None
-        return SESSIONS.get(sid)
+        s = SESSIONS.get(sid)
+        if not s:
+            return None
+        if s.get("exp", 0) < time.time():   # сессия истекла
+            SESSIONS.pop(sid, None)
+            return None
+        return s.get("user")
+
+    def _read_body(self):
+        n = int(self.headers.get("Content-Length", 0) or 0)
+        if n > MAX_BODY:
+            return None
+        return self.rfile.read(n) if n else b""
 
     def _send_html(self, body, code=200, extra_headers=None):
         data = body.encode("utf-8")
@@ -127,9 +186,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def _create_task(self):
-        n = int(self.headers.get("Content-Length", 0))
+        raw = self._read_body()
+        if raw is None:
+            return self._json({"error": "too large"}, 413)
         try:
-            body = json.loads(self.rfile.read(n) or b"{}")
+            body = json.loads(raw or b"{}")
         except json.JSONDecodeError:
             return self._json({"error": "bad json"}, 400)
         words = (body.get("words") or "").strip()
@@ -210,9 +271,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if m:
             if not self._user():
                 return self._json({"error": "auth"}, 401)
-            n = int(self.headers.get("Content-Length", 0))
+            raw = self._read_body()
+            if raw is None:
+                return self._json({"error": "too large"}, 413)
             try:
-                patch = json.loads(self.rfile.read(n) or b"{}")
+                patch = json.loads(raw or b"{}")
             except json.JSONDecodeError:
                 return self._json({"error": "bad json"}, 400)
             allowed = ("status", "results", "log", "attempts", "done", "stopped", "pausedAt", "stats", "balScanned", "deleted")
@@ -228,15 +291,28 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._json({"error": "not found"}, 404)
         if path != "/login":
             return self.send_error(404)
-        n = int(self.headers.get("Content-Length", 0))
-        form = urllib.parse.parse_qs(self.rfile.read(n).decode())
+        ip = self.client_address[0] if self.client_address else "?"
+        rec = LOGIN_FAILS.get(ip)
+        if rec and time.time() - rec[1] < LOGIN_WINDOW and rec[0] >= MAX_LOGIN_FAILS:
+            return self._send_html(tpl("login.html").replace(
+                "{{ERROR}}", '<div class="error">Слишком много попыток входа. Подождите несколько минут.</div>'), code=429)
+        body = self._read_body()
+        if body is None:
+            return self.send_error(413)
+        form = urllib.parse.parse_qs(body.decode("utf-8", "replace"))
         user = form.get("username", [""])[0]
         pw = form.get("password", [""])[0]
         if verify(user, pw):
-            sid = secrets.token_hex(24)
-            SESSIONS[sid] = user
-            cookie = f"sid={sid}; HttpOnly; Path=/; SameSite=Strict"
+            LOGIN_FAILS.pop(ip, None)
+            sid = secrets.token_hex(32)
+            SESSIONS[sid] = {"user": user, "exp": time.time() + SESSION_TTL}
+            cookie = f"sid={sid}; HttpOnly; Path=/; SameSite=Strict" + ("; Secure" if SECURE_COOKIE else "")
             return self._redirect("/", [("Set-Cookie", cookie)])
+        r = LOGIN_FAILS.get(ip)
+        if not r or time.time() - r[1] >= LOGIN_WINDOW:
+            r = [0, time.time()]
+        r[0] += 1
+        LOGIN_FAILS[ip] = r
         err = '<div class="error">Неверный логин или пароль</div>'
         return self._send_html(tpl("login.html").replace("{{ERROR}}", err), code=401)
 
