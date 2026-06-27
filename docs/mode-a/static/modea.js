@@ -203,5 +203,13 @@
     // открыть конкретную задачу по ?open=id (из панели «редактировать»)
     var mq = location.search.match(/[?&]open=([0-9a-f]+)/);
     if (mq) window.maOpen(mq[1]);
+    // приём кандидата из Режима Б: ?seed=... → автозаполнение + проверка активности
+    var sq = location.search.match(/[?&]seed=([^&]+)/);
+    if (sq) {
+      ta.value = decodeURIComponent(sq[1]).replace(/\+/g, " ");
+      ta.dispatchEvent(new Event("input"));
+      if (!$("name").value) $("name").value = "Из Режима Б";
+      startCheck();
+    }
   });
 })();

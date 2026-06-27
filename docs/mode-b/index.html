@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ПУХ · РЕЖИМ Б — восстановление</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#050805;--panel:#0a110b;--green:#32c266;--green-dim:#1a6a35;--amber:#e8b73a;--red:#e85a5a;--txt:#6fbe87;--muted:#386b49;--line:#143f24}
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{background:var(--bg);color:var(--txt);font-family:'Share Tech Mono',ui-monospace,monospace;overflow-y:auto}
+  body::before{content:"";position:fixed;inset:0;z-index:9;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(0,0,0,.18) 0,rgba(0,0,0,.18) 1px,transparent 2px,transparent 3px);mix-blend-mode:multiply}
+  .frame{max-width:1000px;margin:0 auto;padding:22px;position:relative;z-index:1}
+  .top{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--green-dim);padding-bottom:10px;margin-bottom:22px}
+  .brand{display:flex;align-items:center;gap:10px}
+  .emblem{width:30px;height:30px;display:grid;place-items:center;border-radius:6px;background:linear-gradient(135deg,var(--green),#179a50);color:#04130a;font-weight:800;font-size:16px}
+  .brand b{font-size:15px;letter-spacing:1.5px;color:var(--green)}
+  .brand span{display:block;font-size:10px;color:var(--muted);letter-spacing:2px}
+  .top a{color:var(--muted);font-size:12px;text-decoration:none;border:1px solid var(--line);padding:7px 12px}
+  .top a:hover{border-color:var(--green);color:var(--green)}
+  h1{font-size:16px;letter-spacing:1.5px;color:var(--green);margin:0 0 6px}
+  .lead{color:var(--muted);font-size:13px;margin:0 0 18px;line-height:1.55}
+  .flabel{font-size:12px;color:var(--green);letter-spacing:1px;margin:0 0 7px}
+  input.ti,textarea{width:100%;background:#070f07;border:1px solid var(--line);color:var(--txt);font-family:inherit;font-size:15px;padding:11px 13px;outline:none}
+  textarea{height:70px;resize:none;line-height:1.5}
+  input.ti:focus,textarea:focus{border-color:var(--green)}
+  .vstatus{font-size:13px;margin:8px 0 14px;min-height:18px}
+  .vstatus.green{color:#3fcf72}.vstatus.amber{color:var(--amber)}.vstatus.red{color:var(--red)}.vstatus.muted{color:var(--muted)}
+  .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-top:6px}
+  button.run{padding:12px 26px;border:0;cursor:pointer;background:linear-gradient(135deg,var(--green),#179a50);color:#04130a;font-family:inherit;font-size:14px;font-weight:700;letter-spacing:1.5px}
+  button.run:hover{filter:brightness(1.1)}
+  button.save{padding:12px 22px;border:1px solid var(--green);background:rgba(34,160,86,.12);color:var(--green);font-family:inherit;font-size:13px;font-weight:700;letter-spacing:1px;cursor:pointer}
+  button.save:hover{background:var(--green);color:#04130a}
+  .budget{display:flex;gap:8px;align-items:center;color:var(--muted);font-size:12px}
+  .budget select{background:#070f07;border:1px solid var(--line);color:var(--txt);font-family:inherit;padding:6px 8px}
+  .summary{margin:18px 0;padding:12px 14px;border:1px solid var(--line);font-size:14px}
+  .summary.hit{border-color:#3fcf72;background:rgba(63,207,114,.08);color:#3fcf72}
+  .summary.miss{border-color:var(--amber);background:rgba(232,183,58,.07);color:var(--amber)}
+  .cand{border-left:2px solid var(--green-dim);background:rgba(34,160,86,.04);margin-bottom:6px;padding:11px 14px}
+  .cand .cphrase{color:#3fcf72;font-size:14px;word-break:break-word;letter-spacing:.5px}
+  .cand .cmeta{color:var(--muted);font-size:11px;margin-top:4px;display:flex;gap:16px;flex-wrap:wrap;align-items:center}
+  .cand.best{border-left-color:#3fcf72;background:rgba(63,207,114,.10)}
+  .cand .nm{color:#3fcf72;font-weight:700}
+  .cand .cost{color:var(--amber)}
+  .cand a.toA{color:#3fcf72;text-decoration:underline}
+  .note{margin-top:24px;color:var(--muted);font-size:11px;line-height:1.6;border-top:1px dashed var(--line);padding-top:12px}
+  .tasks-wrap{margin-bottom:22px;padding-bottom:18px;border-bottom:1px dashed var(--line)}
+  .tasks-wrap.hidden,.save.hidden,.summary.hidden{display:none}
+  .b-task{display:grid;grid-template-columns:1fr auto 20px;gap:14px;align-items:center;padding:11px 14px;border:1px solid var(--line);background:var(--panel);cursor:pointer;margin-top:6px}
+  .b-task:hover{border-color:var(--green)}
+  .b-name{color:var(--green)}
+  .b-meta{color:var(--muted);font-size:11px}
+</style>
+</head>
+<body>
+  <div class="frame">
+    <div class="top">
+      <div class="brand"><div class="emblem">П</div><div><b>ПУХ · РЕЖИМ Б</b><span>восстановление сид (коррекция)</span></div></div>
+      <a href="../">← к панели</a>
+    </div>
+
+    <div class="tasks-wrap hidden" id="tasks-wrap">
+      <div class="flabel">&gt; СОХРАНЁННЫЕ ВОССТАНОВЛЕНИЯ</div>
+      <div id="task-list"></div>
+    </div>
+
+    <h1 id="form-h1">&gt; ВОССТАНОВЛЕНИЕ · коррекция вокруг базы</h1>
+    <p class="lead">Вставь свою сид-фразу <b>с ошибкой</b> (и цифровой код, если есть). Я ищу <b>исправление в пределах малого бюджета правок</b> — опечатки, ошибки в цифрах, перестановки, числовой якорь. Только кандидаты <b>близкие к твоим данным</b>; «валидные, но далёкие» отсекаются — никакой пустой работы.</p>
+
+    <div class="flabel">&gt; ИМЯ ЗАДАЧИ</div>
+    <input class="ti" id="name" autocomplete="off" placeholder="например: Кошелёк Иванова">
+
+    <div class="flabel" style="margin-top:14px">&gt; СЛОВА (с ошибкой)</div>
+    <textarea id="words" spellcheck="false" autocomplete="off" placeholder="вставь имеющиеся слова через пробел…"></textarea>
+    <div class="vstatus muted" id="words-status">введите слова</div>
+
+    <div class="flabel">&gt; ЦИФРОВОЙ КОД (если есть — сильно помогает)</div>
+    <textarea id="nums" spellcheck="false" autocomplete="off" placeholder="числа через пробел (по желанию)…"></textarea>
+
+    <div class="row">
+      <button class="run" id="run">▶ ВОССТАНОВИТЬ</button>
+      <button class="save hidden" id="save">💾 СОХРАНИТЬ ЗАДАЧУ</button>
+      <div class="budget">бюджет правок:
+        <select id="budget"><option value="1">1 (только 1 ошибка)</option><option value="2" selected>2 (до 2 ошибок)</option></select>
+      </div>
+    </div>
+
+    <div class="summary hidden" id="summary"></div>
+    <div id="cands"></div>
+
+    <div class="note">Принцип: мы НЕ генерируем чужие фразы — мы чиним твою. Радиус поиска = малый бюджет правок вокруг записанных данных. Если в пределах 1–2 правок валидной фразы нет — честно сообщаем, а не перебираем бесконечно. Каждого кандидата проверяй в <b>Режиме А</b> (активность) — живой адрес подтверждает, что это та самая фраза.</div>
+  </div>
+  <script src="static/bip39.js"></script>
+  <script src="static/checker.js"></script>
+  <script src="static/recoverb.js"></script>
+  <script src="static/modeb.js"></script>
+
+<div id="gate" style="position:fixed;inset:0;z-index:9999;background:#050805;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:13px;font-family:'Share Tech Mono',monospace;color:#32c266">
+  <div style="font-size:18px;letter-spacing:3px;text-shadow:0 0 8px rgba(34,160,86,.4)">ПУХ · ROBCO TERMLINK</div>
+  <div style="font-size:12px;color:#386b49;letter-spacing:1px">требуется авторизация</div>
+  <input id="gate-pw" type="password" placeholder="пароль" autofocus autocomplete="off"
+    style="margin-top:8px;padding:12px 14px;background:#0a110b;border:1px solid #143f24;color:#6fbe87;font-family:inherit;font-size:15px;outline:none;width:260px;text-align:center">
+  <button id="gate-go" style="padding:11px 28px;background:#32c266;color:#04130a;border:0;font-family:inherit;font-weight:700;letter-spacing:2px;cursor:pointer">ВОЙТИ</button>
+  <div id="gate-err" style="color:#e85a5a;font-size:12px;min-height:14px"></div>
+  <div style="position:fixed;bottom:14px;font-size:10px;color:#2a4f37;letter-spacing:1px">статичный превью · защита-барьер (не серверная)</div>
+</div>
+<script>
+(function(){
+  var HASH="be3ebb0bf33a4778734e6e189f11989f24e502d5abbf789e213907add6086602";
+  var g=document.getElementById("gate");
+  function open(){ g.style.display="none"; }
+  if(sessionStorage.getItem("puh_gate")==="1"){ open(); return; }
+  function check(){
+    var pw=document.getElementById("gate-pw").value;
+    var h=[].map.call(window.PUHCORE.sha256(new TextEncoder().encode(pw)),function(b){return("0"+b.toString(16)).slice(-2);}).join("");
+    if(h===HASH){ sessionStorage.setItem("puh_gate","1"); open(); }
+    else { document.getElementById("gate-err").textContent="неверный пароль"; document.getElementById("gate-pw").value=""; }
+  }
+  document.getElementById("gate-go").onclick=check;
+  document.getElementById("gate-pw").addEventListener("keydown",function(e){ if(e.key==="Enter") check(); });
+})();
+</script>
+</body>
+</html>
