@@ -281,6 +281,35 @@ def tpl(name):
         return f.read()
 
 
+# ---------- версионирование ассетов (пробивает кэш Cloudflare/браузера при деплое) ----------
+_VER = {"t": 0.0, "v": "0"}
+
+
+def asset_version():
+    now = time.time()
+    if now - _VER["t"] < 5:
+        return _VER["v"]
+    mx = 0.0
+    for d in [os.path.join(BASE, "static")] + [os.path.join(BASE, sa, "static") for sa in SUBAPPS]:
+        try:
+            for f in os.listdir(d):
+                if f.endswith((".js", ".css")):
+                    mx = max(mx, os.path.getmtime(os.path.join(d, f)))
+        except OSError:
+            pass
+    _VER["v"] = str(int(mx))
+    _VER["t"] = now
+    return _VER["v"]
+
+
+_ASSET_RE = re.compile(r'((?:src|href)="[^"]*?static/[^"?]+\.(?:js|css))(")')
+
+
+def versionize(html):
+    ver = asset_version()
+    return _ASSET_RE.sub(lambda m: m.group(1) + "?v=" + ver + m.group(2), html)
+
+
 class Handler(http.server.BaseHTTPRequestHandler):
     server_version = "PUH"      # не палим версию http.server
     sys_version = ""
@@ -315,10 +344,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
         return self.rfile.read(n) if n else b""
 
     def _send_html(self, body, code=200, extra_headers=None):
-        data = body.encode("utf-8")
+        data = versionize(body).encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")          # HTML всегда свежий
         for k, v in (extra_headers or {}):
             self.send_header(k, v)
         self.end_headers()
@@ -345,13 +375,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
         fp = self._safe_path(rel)
         if not fp or not os.path.isfile(fp):
             return self.send_error(404)
-        ctype = CTYPES.get(os.path.splitext(fp)[1].lower(), "application/octet-stream")
-        with open(fp, "rb") as f:
-            data = f.read()
+        ext = os.path.splitext(fp)[1].lower()
+        ctype = CTYPES.get(ext, "application/octet-stream")
+        if ext == ".html":                                    # под-страницы (Режим А/Б/Масс) — версионируем ассеты
+            with open(fp, encoding="utf-8") as f:
+                data = versionize(f.read()).encode("utf-8")
+        else:
+            with open(fp, "rb") as f:
+                data = f.read()
         self.send_response(200)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
-        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Cache-Control", "no-store" if ext == ".html" else "no-cache")
         self.end_headers()
         self.wfile.write(data)
 

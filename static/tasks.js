@@ -212,6 +212,8 @@
   function refresh() { store.list().then(render); }
   window.refreshTasks = refresh;
   window.renderTasksDirect = render;
+  var isAdmin = false;   // супер-админ PUH (определяем с сервера)
+  try { fetch("/api/account", { credentials: "same-origin" }).then(function (r) { return r.ok ? r.json() : null; }).then(function (d) { isAdmin = !!(d && d.role === "admin"); }).catch(function () {}); } catch (e) {}
   window.renderDB = function () {
     store.list().then(function (tasks) {
       var el = $("db-list"); if (!el) return;
@@ -242,10 +244,17 @@
         var inner = lg.length
           ? lg.map(function (e) { return '<div class="db-log-row"><span class="ts">' + fmtDateTime(e.ts) + "</span><span>" + esc(e.msg) + "</span></div>"; }).join("")
           : '<div class="td-empty">журнал пуст</div>';
-        inner += '<div style="padding:8px 12px"><a href="javascript:void(0)" onclick="openTask(\'' + id + '\')" class="tx-link">↗ открыть задание полностью</a></div>';
+        inner += '<div class="db-actions"><a href="javascript:void(0)" onclick="openTask(\'' + id + '\')" class="tx-link">↗ открыть задание полностью</a>';
+        if (isAdmin && !(t && t.deleted)) inner += '<button class="db-del-btn" onclick="dbDelete(\'' + id + '\')">🗑 УДАЛИТЬ ЗАДАЧУ</button>';
+        inner += "</div>";
         log.innerHTML = inner;
       });
     }
+  };
+  window.dbDelete = function (id) {
+    if (!isAdmin) return;
+    confirmModal("Удалить задачу?", "Задача будет помечена как удалённая (доступно только администратору PUH).", "Удалить",
+      function () { store.update(id, { deleted: true }).then(function () { window.renderDB(); refresh(); flash("задача удалена"); }); });
   };
 
   function explorerUrl(coin, chains, addr) {
