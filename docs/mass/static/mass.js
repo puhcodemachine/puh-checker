@@ -100,9 +100,9 @@
   function serverSync(then) {
     api("/api/tasks").then(function (d) {
       var t = ((d && d.tasks) || []).filter(function (x) { return x.mass && !x.deleted; });
-      sums = t.map(function (x) { return { id: x.id, name: x.name, seed: "", status: srvStatus(x.status), alive: x.alive || 0, lastCheck: x.lastCheck, created: x.created }; })
+      sums = t.map(function (x) { return { id: x.id, name: x.name, seed: "", status: srvStatus(x.status), alive: x.alive || 0, progress: x.progress, lastCheck: x.lastCheck, created: x.created }; })
         .sort(function (a, b) { return (+a.name || 0) - (+b.name || 0); });
-      rebuild(); renderStats(); renderList();
+      rebuild(); renderStats(); renderControls(); renderList();
       if (then) then();
     });
   }
@@ -213,6 +213,13 @@
     $("prog-bar").style.width = Math.round(100 * c.done / scannable) + "%";
   }
   function renderControls() {
+    if (SERVER) {
+      var scanning = sums.some(function (s) { return s.status === "scanning"; });
+      $("start").disabled = scanning; $("pause").disabled = !scanning;
+      $("start").textContent = scanning ? "▶ ИДЁТ ПРОВЕРКА…" : "▶ СТАРТ ПРОВЕРКИ";
+      var cc = $("conc"); if (cc) cc.textContent = scanning ? "◉ сервер сканит" : "";
+      return;
+    }
     $("start").disabled = massRunning; $("pause").disabled = !massRunning;
     $("start").textContent = massRunning ? "▶ ИДЁТ…" : "▶ СТАРТ ПРОВЕРКИ";
     var c = $("conc"); if (c) c.textContent = massRunning ? ("◉ потоков онлайн: " + inflight + " · цель " + ctrl.effective(queueRemaining() + inflight) + "/" + MAXC) : "";
@@ -225,21 +232,20 @@
   function matchSearch(s) { if (!search) return true; return s.name.indexOf(search) >= 0 || s.seed.indexOf(search) >= 0; }
   function filtered() { return sums.filter(function (s) { return matchFilter(s) && matchSearch(s); }); }
   function renderList() {
-    var list = filtered(), el = $("mlist");
-    if (!sums.length) { el.innerHTML = '<div class="empty">список пуст — загрузи .txt со списком сид</div>'; $("pager").innerHTML = ""; return; }
+    var list = filtered(), el = $("mlist"), cnt = $("m-count"); if (cnt) cnt.textContent = "[ " + list.length + " ]";
+    if (!sums.length) { el.innerHTML = '<div class="empty">список пуст — загрузи .txt</div>'; $("pager").innerHTML = ""; return; }
     if (!list.length) { el.innerHTML = '<div class="empty">нет задач под фильтр</div>'; $("pager").innerHTML = ""; return; }
     var pages = Math.ceil(list.length / PAGE); if (page >= pages) page = pages - 1; if (page < 0) page = 0;
     var slice = list.slice(page * PAGE, page * PAGE + PAGE);
     el.innerHTML = slice.map(function (s) {
       var alive = s.status === "alive", dot = alive ? "alive" : s.status === "scanning" ? "scan" : s.status === "error" || s.status === "invalid" ? "err" : s.status === "pending" ? "pending" : "";
-      var meta = s.status === "scanning" ? "проверка…" : s.status === "alive" ? "● живых: " + s.alive : s.status === "empty" ? "пусто" : s.status === "invalid" ? "невалидна" : s.status === "error" ? "ошибка" : "в очереди";
+      var meta = s.status === "scanning" ? "проверка " + (s.progress || "…") : s.status === "alive" ? "● живых: " + s.alive : s.status === "empty" ? "пусто" : s.status === "invalid" ? "невалидна" : s.status === "error" ? "ошибка" : "в очереди";
       return '<div class="mrow ' + (alive ? "alive" : s.status === "invalid" ? "invalid" : "") + '" onclick="massOpen(\'' + s.id + '\')">' +
-        '<span class="mdot ' + dot + '"></span><span class="mname">#' + esc(s.name) + '</span>' +
-        '<span class="mseed">' + esc(s.seed) + '</span>' +
-        '<span class="mmeta' + (alive ? " alive" : "") + '">' + meta + '</span>' +
-        '<span class="mwhen">' + (s.lastCheck ? fmtDT(s.lastCheck) : "—") + '</span></div>';
+        '<div class="mr-top"><span class="mdot ' + dot + '"></span><span class="mname">#' + esc(s.name) + '</span>' +
+        '<span class="mmeta' + (alive ? " alive" : "") + '">' + meta + '</span></div>' +
+        '<div class="mr-sub">' + (s.lastCheck ? "пров.: " + fmtDT(s.lastCheck) : "ещё не проверено") + '</div></div>';
     }).join("");
-    $("pager").innerHTML = pages > 1 ? '<button ' + (page === 0 ? "disabled" : "") + ' onclick="massPage(-1)">← назад</button> стр. ' + (page + 1) + " / " + pages + ' (' + list.length + ') <button ' + (page >= pages - 1 ? "disabled" : "") + ' onclick="massPage(1)">вперёд →</button>' : list.length + " задач";
+    $("pager").innerHTML = pages > 1 ? '<button ' + (page === 0 ? "disabled" : "") + ' onclick="massPage(-1)">←</button> ' + (page + 1) + "/" + pages + ' <button ' + (page >= pages - 1 ? "disabled" : "") + ' onclick="massPage(1)">→</button>' : list.length + " задач";
   }
   function renderDetail(id) {
     var s = idMap[id]; if (!s) return;
@@ -290,8 +296,14 @@
       if (f) { var rd = new FileReader(); rd.onload = function () { doLoad(String(rd.result) + (paste ? "\n" + paste : "")); }; rd.readAsText(f); }
       else doLoad(paste);
     });
-    $("start").addEventListener("click", function () { if (SERVER) serverSync(); else scanLoop(); });
-    $("pause").addEventListener("click", function () { if (!SERVER) pauseScan(); });
+    $("start").addEventListener("click", function () {
+      if (SERVER) { var r = sums.filter(function (s) { return s.status !== "scanning"; }); $("start").disabled = true; Promise.all(r.map(function (s) { return api("/api/tasks/" + s.id + "/update", { method: "POST", body: JSON.stringify({ status: "running" }) }); })).then(serverSync); }
+      else scanLoop();
+    });
+    $("pause").addEventListener("click", function () {
+      if (SERVER) { var r = sums.filter(function (s) { return s.status === "scanning"; }); $("pause").disabled = true; Promise.all(r.map(function (s) { return api("/api/tasks/" + s.id + "/stop", { method: "POST" }); })).then(serverSync); }
+      else pauseScan();
+    });
     $("clear").addEventListener("click", function () {
       if (!sums.length) return;
       if (!confirm("Удалить ВСЕ " + sums.length + " задач масс-проверки? (главная панель не затрагивается)")) return;

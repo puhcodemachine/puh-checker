@@ -29,11 +29,16 @@ def check_retry(row, ctrl, tries=4):
             if n < tries: time.sleep(0.3 * n)
     return {"bal": "н/д", "received": "—", "txn": 0, "alive": False, "chains": ""}
 
-def scan_seed(seed, ctrl=None, addr_workers=4):
+def scan_seed(seed, ctrl=None, addr_workers=4, on_progress=None):
     ctrl = ctrl or Ctrl()
     rows = derive.derive_all(seed)
+    total = len(rows); done = [0]; plock = threading.Lock()
     def one(row):
         a = check_retry(row, ctrl)
+        if on_progress:
+            with plock:
+                done[0] += 1
+                on_progress(done[0], total)        # живой прогресс X/43
         return {"coin": row["coin"], "std": row["std"], "path": row["path"], "addr": row["addr"],
                 "bal": a["bal"], "received": a.get("received", "—"), "txn": a.get("txn", 0),
                 "alive": a["alive"], "chains": a.get("chains", "")}

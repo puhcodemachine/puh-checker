@@ -121,12 +121,15 @@ def save_tasks(tasks):
     os.replace(tmp, TASKS_PATH)              # tasks.json на диске — зашифрован
 
 
+LIVE_PROGRESS = {}      # id -> "X/43" во время скана (в памяти, без записи на диск)
+
+
 def task_summary(t):
     return {"id": t["id"], "name": t.get("name"), "type": t.get("type"), "status": t.get("status"),
             "modes": t.get("modes"), "created": t.get("created"), "started": t.get("started"),
             "stopped": t.get("stopped"), "pausedAt": t.get("pausedAt"),
             "mode": t.get("mode", "B"), "alive": t.get("alive", 0), "lastCheck": t.get("lastCheck"),
-            "progress": t.get("progress"), "deleted": t.get("deleted"),
+            "progress": LIVE_PROGRESS.get(t["id"], t.get("progress")), "deleted": t.get("deleted"),
             "hits": t.get("hits", 0), "candidates": len(t.get("candidates", [])), "mass": t.get("mass"),
             "results": len(t.get("results", [])), "owner": t.get("owner")}
 
@@ -168,11 +171,16 @@ def _changes(prev, new):
     return out
 
 
+MASS_MIN_USD = float(os.environ.get("PUH_MASS_MIN_USD", "200"))   # масс: уведомлять только при балансе ≥ $200
+
+
 def _notify_changes(task, seed, prev, new, mode_label):
-    """Режим А — ИЗМЕНЕНИЕ в пути; Режим Б→А — НАЙДЕНО (средства/активность)."""
+    """Режим А — ИЗМЕНЕНИЕ в пути; Режим Б→А — НАЙДЕНО; МАСС — только баланс ≥ $200 (забытые остатки)."""
     if not NOTIFY or not NOTIFY.enabled():
         return
     rows = _changes(prev, new)
+    if task.get("mass"):                                   # масс — только значимые балансы
+        rows = [r for r in rows if NOTIFY.usd(r.get("coin"), r.get("bal")) >= MASS_MIN_USD]
     if not rows:
         return
     title = "НАЙДЕНО" if not prev else "ИЗМЕНЕНИЕ"
@@ -236,16 +244,18 @@ def _scan_task(tid):
                              "lastCheck": time.time(), "scan_done": True})
         else:                       # mode A (в т.ч. масс — одна сид = одна задача)
             prev = t.get("results") or []
-            out = SCAN.scan_seed(t.get("seed", ""), SCAN_CTRL)
+            out = SCAN.scan_seed(t.get("seed", ""), SCAN_CTRL,
+                                 on_progress=lambda dn, tt: LIVE_PROGRESS.__setitem__(tid, f"{dn}/{tt}"))
             patch_task(tid, {"results": out["results"], "alive": out["alive"],
                              "status": "amber" if out["alive"] else "green",
                              "lastCheck": time.time(), "scan_done": True,
                              "progress": f"{len(out['results'])}/{len(out['results'])}"})
-            _notify_changes(t, t.get("seed", ""), prev, out["results"], "Режим А")
+            _notify_changes(t, t.get("seed", ""), prev, out["results"], "МАСС" if t.get("mass") else "Режим А")
     except Exception as e:
         print("[scan] ошибка задачи", tid, e, flush=True)
         patch_task(tid, {"status": "red", "scanError": str(e)[:200]})
     finally:
+        LIVE_PROGRESS.pop(tid, None)
         with BUSY_LOCK:
             BUSY.discard(tid)
 

@@ -226,7 +226,7 @@
   // ---------- серверный режим: задача на сервере + поллинг (скан 24/7) ----------
   function srvRefreshList(then) {
     api("/api/tasks").then(function (d) {
-      srvList = ((d && d.tasks) || []).filter(function (t) { return (t.mode === "A" || t.mode === "BA") && !t.deleted; })
+      srvList = ((d && d.tasks) || []).filter(function (t) { return (t.mode === "A" || t.mode === "BA") && !t.deleted && !t.mass; })
         .sort(function (a, b) { return (b.started || 0) - (a.started || 0); });
       renderTaskList(); if (then) then();
     });
