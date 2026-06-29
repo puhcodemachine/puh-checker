@@ -51,9 +51,37 @@ def _enc_key():
 FERNET = Fernet(_enc_key())
 
 
+PBKDF2_ITERS = 200000
+
+
+def make_cred(pw):
+    salt = secrets.token_bytes(16)
+    dk = hashlib.pbkdf2_hmac("sha256", pw.encode(), salt, PBKDF2_ITERS)
+    return {"salt": salt.hex(), "iters": PBKDF2_ITERS, "hash": dk.hex()}
+
+
+def _save_auth(a):
+    tmp = AUTH_PATH + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(a, f, ensure_ascii=False, indent=1)
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, AUTH_PATH)
+
+
 def load_auth():
     with open(AUTH_PATH) as f:
-        return json.load(f)
+        a = json.load(f)
+    if "users" not in a:                       # миграция старого одно-юзерного формата → мультиюзер
+        u = a.get("user", "PUH")
+        a = {"users": {u: {"salt": a["salt"], "iters": a["iters"], "hash": a["hash"],
+                           "role": "admin", "created": time.time(), "note": "главный администратор"}}}
+        _save_auth(a)
+    return a
+
+
+def user_role(user):
+    u = load_auth()["users"].get(user or "")
+    return u.get("role") if u else None
 
 
 # ---------- хранилище заданий (data/tasks.json — В .gitignore, содержит seed) ----------
@@ -92,15 +120,15 @@ def task_summary(t):
             "stopped": t.get("stopped"), "pausedAt": t.get("pausedAt"),
             "mode": t.get("mode", "B"), "alive": t.get("alive", 0), "lastCheck": t.get("lastCheck"),
             "progress": t.get("progress"), "deleted": t.get("deleted"),
-            "results": len(t.get("results", []))}
+            "results": len(t.get("results", [])), "owner": t.get("owner")}
 
 
 def verify(user, pw):
-    a = load_auth()
-    if user != a["user"]:
+    u = load_auth()["users"].get(user or "")
+    if not u:
         return False
-    dk = hashlib.pbkdf2_hmac("sha256", pw.encode(), bytes.fromhex(a["salt"]), a["iters"])
-    return hmac.compare_digest(dk.hex(), a["hash"])
+    dk = hashlib.pbkdf2_hmac("sha256", pw.encode(), bytes.fromhex(u["salt"]), u["iters"])
+    return hmac.compare_digest(dk.hex(), u["hash"])
 
 
 def tpl(name):
@@ -206,7 +234,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         task = {"id": tid, "name": name, "type": ttype, "status": "green",
                 "modes": {"podbor": True, "monitor": bool(body.get("monitor"))},
                 "words": words, "nums": nums, "created": now, "started": now,
-                "results": [], "log": []}
+                "results": [], "log": [], "owner": self._user()}   # ветка владельца
         with LOCK:
             tasks = load_tasks()
             tasks.append(task)
@@ -223,16 +251,41 @@ class Handler(http.server.BaseHTTPRequestHandler):
         path = self.path.split("?")[0]
         if path.startswith("/static/"):
             return self._serve_static(path)
+        if path == "/api/account":
+            user = self._user()
+            if not user:
+                return self._json({"error": "auth"}, 401)
+            return self._json({"user": user, "role": user_role(user)})
+        if path == "/api/admin/users":
+            user = self._user()
+            if not user:
+                return self._json({"error": "auth"}, 401)
+            if user_role(user) != "admin":
+                return self._json({"error": "forbidden"}, 403)
+            tasks = load_tasks()
+            users = load_auth()["users"]
+            out = []
+            for name, u in users.items():
+                cnt = len([t for t in tasks if t.get("owner") == name and not t.get("deleted")])
+                out.append({"username": name, "role": u.get("role", "user"), "created": u.get("created"),
+                            "note": u.get("note", ""), "tasks": cnt})
+            return self._json({"users": out})
         if path == "/api/tasks":
-            if not self._user():
+            user = self._user()
+            if not user:
                 return self._json({"error": "auth"}, 401)
-            return self._json({"tasks": [task_summary(t) for t in load_tasks()]})
+            adm = user_role(user) == "admin"
+            return self._json({"tasks": [task_summary(t) for t in load_tasks() if adm or t.get("owner") == user]})
         if path.startswith("/api/tasks/"):
-            if not self._user():
+            user = self._user()
+            if not user:
                 return self._json({"error": "auth"}, 401)
+            adm = user_role(user) == "admin"
             tid = path[len("/api/tasks/"):]
             for t in load_tasks():
                 if t["id"] == tid:
+                    if not adm and t.get("owner") and t.get("owner") != user:
+                        return self._json({"error": "forbidden"}, 403)
                     return self._json({"task": t})
             return self._json({"error": "not found"}, 404)
         if path == "/login":
@@ -256,12 +309,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._create_task()
         m = re.match(r"^/api/tasks/([0-9a-f]+)/stop$", path)
         if m:
-            if not self._user():
+            user = self._user()
+            if not user:
                 return self._json({"error": "auth"}, 401)
+            adm = user_role(user) == "admin"
             with LOCK:
                 tasks = load_tasks()
                 for t in tasks:
                     if t["id"] == m.group(1):
+                        if not adm and t.get("owner") and t.get("owner") != user:
+                            return self._json({"error": "forbidden"}, 403)
                         t["status"] = "red"
                         t["stopped"] = time.time()
                         save_tasks(tasks)
@@ -269,8 +326,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._json({"error": "not found"}, 404)
         m = re.match(r"^/api/tasks/([0-9a-f]+)/update$", path)
         if m:
-            if not self._user():
+            user = self._user()
+            if not user:
                 return self._json({"error": "auth"}, 401)
+            adm = user_role(user) == "admin"
             raw = self._read_body()
             if raw is None:
                 return self._json({"error": "too large"}, 413)
@@ -283,12 +342,64 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 tasks = load_tasks()
                 for t in tasks:
                     if t["id"] == m.group(1):
+                        if not adm and t.get("owner") and t.get("owner") != user:
+                            return self._json({"error": "forbidden"}, 403)
                         for k in allowed:
                             if k in patch:
                                 t[k] = patch[k]
                         save_tasks(tasks)
                         return self._json({"ok": True, "task": task_summary(t)})
             return self._json({"error": "not found"}, 404)
+        if path == "/api/account/password":
+            user = self._user()
+            if not user:
+                return self._json({"error": "auth"}, 401)
+            raw = self._read_body()
+            if raw is None:
+                return self._json({"error": "too large"}, 413)
+            try:
+                body = json.loads(raw or b"{}")
+            except json.JSONDecodeError:
+                return self._json({"error": "bad json"}, 400)
+            if not verify(user, body.get("old", "")):
+                return self._json({"error": "неверный текущий пароль"}, 403)
+            new = body.get("new", "")
+            if len(new) < 8:
+                return self._json({"error": "новый пароль слишком короткий (мин. 8 символов)"}, 400)
+            with LOCK:
+                a = load_auth()
+                a["users"][user].update(make_cred(new))
+                _save_auth(a)
+            return self._json({"ok": True})
+        if path == "/api/admin/users":
+            user = self._user()
+            if not user:
+                return self._json({"error": "auth"}, 401)
+            if user_role(user) != "admin":
+                return self._json({"error": "forbidden"}, 403)
+            raw = self._read_body()
+            if raw is None:
+                return self._json({"error": "too large"}, 413)
+            try:
+                body = json.loads(raw or b"{}")
+            except json.JSONDecodeError:
+                return self._json({"error": "bad json"}, 400)
+            uname = (body.get("username") or "").strip()
+            pw = body.get("password") or ""
+            note = (body.get("note") or "").strip()[:200]
+            if not re.match(r"^[A-Za-z0-9_.\-]{2,32}$", uname):
+                return self._json({"error": "ник: 2-32 символа (A-Z, 0-9, _ . -)"}, 400)
+            if len(pw) < 8:
+                return self._json({"error": "пароль слишком короткий (мин. 8 символов)"}, 400)
+            with LOCK:
+                a = load_auth()
+                if uname in a["users"]:
+                    return self._json({"error": "пользователь уже существует"}, 409)
+                cred = make_cred(pw)
+                cred.update({"role": "user", "created": time.time(), "note": note})
+                a["users"][uname] = cred
+                _save_auth(a)
+            return self._json({"ok": True, "username": uname})
         if path != "/login":
             return self.send_error(404)
         ip = self.client_address[0] if self.client_address else "?"

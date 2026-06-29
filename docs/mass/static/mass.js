@@ -154,7 +154,7 @@
       })();
     });
   }
-  function scanLoop() { if (massRunning) return; massRunning = true; buildQueue(); startListTimer(); pump(); }
+  function scanLoop() { if (massRunning || inflight > 0) return; massRunning = true; buildQueue(); startListTimer(); pump(); }
   function pump() {
     if (!massRunning) { if (inflight === 0) finishScan(); return; }
     if (qpos >= queue.length && dueCount() > 0) buildQueue();    // подхватываем добавленные/просроченные на лету
@@ -166,6 +166,7 @@
       inflight++;
       scanOneAdaptive(s).then(function () { inflight--; pump(); });
     }
+    if (massRunning && inflight === 0 && queueRemaining() > 0) setTimeout(pump, 50); // страховка от подвисания
     renderControls(); renderStats();
   }
   function finishScan() { massRunning = false; sums.forEach(function (s) { if (s.status === "scanning") s.status = "pending"; }); renderControls(); renderStats(); renderList(); stopListTimer(); }

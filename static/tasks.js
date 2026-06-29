@@ -437,10 +437,13 @@
   }
   function uiStatus(id, txt) { var ss = $("scan-status"); if (ss && curOpen === id) ss.textContent = txt; }
   function finishPause(t, found) {
-    var log = t.log || [];
-    log.push({ ts: nowSec(), msg: "проверка балансов завершена" + (found ? (", СРЕДСТВА: " + found) : ", пусто") + " → ПАУЗА" });
-    store.update(t.id, { status: "amber", pausedAt: nowSec(), log: log, balScanned: true })
-      .then(function () { refresh(); if (curOpen === t.id) window.openTask(t.id); });
+    store.get(t.id).then(function (cur) {
+      if (!cur || cur.deleted || cur.status === "red") { refresh(); return; }  // не воскрешаем остановленную/удалённую
+      var log = cur.log || t.log || [];
+      log.push({ ts: nowSec(), msg: "проверка балансов завершена" + (found ? (", СРЕДСТВА: " + found) : ", пусто") + " → ПАУЗА" });
+      store.update(t.id, { status: "amber", pausedAt: nowSec(), log: log, balScanned: true })
+        .then(function () { refresh(); if (curOpen === t.id) window.openTask(t.id); });
+    });
   }
   // скан балансов всех результатов; andPause=true → по завершении ставит задание на ПАУЗУ
   function scanResults(t, andPause) {

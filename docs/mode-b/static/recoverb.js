@@ -30,7 +30,7 @@
     function add(v) { if (v >= 0 && v <= 2047 && v !== n && !seen[v]) { seen[v] = 1; res.push(v); } }
     for (var i = 0; i < s.length; i++) for (var d = 0; d <= 9; d++) add(parseInt(s.slice(0, i) + d + s.slice(i + 1), 10)); // замена цифры
     for (i = 0; i <= s.length; i++) for (d = 0; d <= 9; d++) add(parseInt(s.slice(0, i) + d + s.slice(i), 10));         // вставка
-    for (i = 0; i < s.length; i++) add(parseInt(s.slice(0, i) + s.slice(i + 1), 10) || -1);                              // удаление
+    for (i = 0; i < s.length; i++) { var del = s.slice(0, i) + s.slice(i + 1); if (del !== "") add(parseInt(del, 10)); } // удаление цифры (индекс 0 не теряем)
     add(n - 1); add(n + 1);                                                                                              // off-by-one
     return res;
   }

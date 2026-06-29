@@ -263,7 +263,7 @@
     var rb = $("run"); rb.disabled = false; rb.textContent = "▶ ПРОВЕРИТЬ ВСЕ ПУТИ";
     curId = id; $("name").value = t.name; $("seed").value = t.seed;
     if (t.changed) updateTask(id, { changed: false });
-    lastRows = running[id] ? lastRows : fatten(t.results);
+    lastRows = fatten((byId(id) || t).results);   // всегда из данных открываемой задачи (не чужие)
     renderShown();
     $("close-task").textContent = running[id] ? "✕ ЗАКРЫТЬ В ТРЕЙ (работает в фоне)" : "✕ ЗАКРЫТЬ";
     $("close-task").classList.remove("hidden"); $("alert").classList.add("hidden");

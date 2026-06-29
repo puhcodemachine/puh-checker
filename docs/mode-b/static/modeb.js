@@ -57,14 +57,16 @@
     var name = ($("name").value || "").trim() || "Восстановление " + (onlyB(all).length + 1);
     var cands = lastCands.slice().sort(function (a, b) { if (!!a.numMatch !== !!b.numMatch) return a.numMatch ? -1 : 1; return (a.cost || 0) - (b.cost || 0); })
       .map(function (k) { return { phrase: k.phrase, cost: k.cost || 0, numMatch: !!k.numMatch, done: false, alive: 0, results: [] }; });
+    // дедуп строго по сигнатуре (имя + первая фраза + кол-во) — разные восстановления НЕ перезаписывают друг друга
+    var sig = name + "|" + ((cands[0] && cands[0].phrase) || "") + "|" + cands.length;
     var id = null;
-    all.forEach(function (t) { if (t.mode === "BA" && t.name === name && (t.candidates || []).length === cands.length) id = t.id; });
+    all.forEach(function (t) { if (t.mode === "BA" && t._sig === sig) id = t.id; });
     var log = [{ ts: now, msg: "Б→А: запущена проверка " + cands.length + " вариаций по всем путям" }];
     if (id) {
       all.forEach(function (t) { if (t.id === id) { t.candidates = cands; t.status = "running"; t.started = now; t.progress = "0/" + cands.length; t.hits = 0; t.alive = 0; t.lastCheck = null; t.changed = false; t.log = log; } });
     } else {
       id = Math.random().toString(16).slice(2, 8);
-      all.push({ id: id, name: name, mode: "BA", fromB: true, type: "Б→А · вариаций " + cands.length, status: "running", candidates: cands, words: words, nums: nums, alive: 0, hits: 0, progress: "0/" + cands.length, created: now, started: now, lastCheck: null, changed: false, log: log });
+      all.push({ id: id, name: name, mode: "BA", fromB: true, _sig: sig, type: "Б→А · вариаций " + cands.length, status: "running", candidates: cands, words: words, nums: nums, alive: 0, hits: 0, progress: "0/" + cands.length, created: now, started: now, lastCheck: null, changed: false, log: log });
     }
     save(all);
     location.href = "../mode-a/?open=" + id;

@@ -163,6 +163,21 @@
   .mode-badge{font-size:10px;padding:1px 6px;border:1px solid var(--green-dim);border-radius:3px;color:var(--green);letter-spacing:1px;margin-left:4px}
   .mode-badge.a{border-color:#27c4ff;color:#5fd0ff}
   .mode-badge.ba{border-color:#e8b73a;color:#e8b73a}
+  .adm-card{border:1px solid var(--line);background:var(--panel);padding:16px 18px;margin-bottom:14px;max-width:560px}
+  .adm-card.hidden,.adm-note.hidden{display:none}
+  .adm-h{color:var(--green);font-size:13px;letter-spacing:1px;margin-bottom:12px}
+  .adm-who{color:var(--muted);font-size:11px;letter-spacing:0}
+  .adm-in{width:100%;background:#070f07;border:1px solid var(--line);color:var(--txt);font-family:inherit;font-size:14px;padding:10px 12px;outline:none;margin-bottom:9px}
+  .adm-in:focus{border-color:var(--green)}
+  .adm-btn{padding:10px 20px;border:0;cursor:pointer;background:linear-gradient(135deg,var(--green),#179a50);color:#04130a;font-family:inherit;font-size:13px;font-weight:700;letter-spacing:1px}
+  .adm-btn:hover{filter:brightness(1.1)}
+  .adm-msg{font-size:12.5px;margin-top:9px;min-height:16px}
+  .adm-msg.ok{color:#3fcf72}.adm-msg.err{color:var(--red)}
+  .adm-note{border:1px solid var(--amber);background:rgba(232,183,58,.08);color:var(--amber);padding:11px 14px;margin-bottom:16px;font-size:12.5px;max-width:560px}
+  .urow{display:grid;grid-template-columns:1fr auto auto;gap:12px;align-items:center;padding:9px 12px;border:1px solid var(--line);margin-top:5px;font-size:12.5px}
+  .urow .un{color:var(--green)}.urow .ur{color:var(--muted);font-size:11px}
+  .urow .ut{color:var(--amber);font-size:11px}
+  .u-badge{font-size:9px;border:1px solid var(--green-dim);color:var(--green);padding:1px 5px;border-radius:3px;margin-left:6px;letter-spacing:1px}
   .net-group{margin:14px 0}
   .net-h{font-size:13px;color:var(--green);letter-spacing:1px;border-bottom:1px dashed var(--line);padding-bottom:6px;margin-bottom:8px}
   .addr-row{display:grid;grid-template-columns:160px 1fr 150px 130px;gap:12px;align-items:center;
@@ -226,9 +241,9 @@
   .main{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0}
 
   /* ВЕРХНЕЕ МЕНЮ НАВИГАЦИИ */
-  .topnav{display:flex;border-bottom:1px solid var(--green-dim);background:rgba(34,160,86,.03)}
-  .tab{padding:11px 24px;color:var(--green);cursor:pointer;letter-spacing:1.5px;font-size:14px;
-    display:flex;align-items:center;gap:9px;border-right:1px solid var(--line);
+  .topnav{display:flex;flex-wrap:wrap;border-bottom:1px solid var(--green-dim);background:rgba(34,160,86,.03)}
+  .tab{padding:11px 18px;color:var(--green);cursor:pointer;letter-spacing:1px;font-size:13.5px;
+    display:flex;align-items:center;gap:8px;border-right:1px solid var(--line);
     text-shadow:0 0 6px rgba(34,160,86,.4);transition:.08s;user-select:none}
   .tab .ico{font-size:15px;opacity:.85}
   .tab:hover{background:var(--green);color:#04130a;text-shadow:none}
@@ -393,6 +408,7 @@
           <div class="tab" onclick="location.href='mode-b/'"><span class="ico">⟲</span>РЕЖИМ Б</div>
           <div class="tab" data-target="db" onclick="selTab(this)"><span class="ico">▦</span>БАЗА ДАННЫХ</div>
           <div class="tab" onclick="location.href='mass/'"><span class="ico">⛁</span>МАСС-ПРОВЕРКА</div>
+          <div class="tab" data-target="admin" onclick="selTab(this)"><span class="ico">⚙</span>АДМИНИСТРАЦИЯ</div>
         </nav>
         <div class="workspace">
 
@@ -442,6 +458,32 @@
             <div id="db-list" class="db-list"></div>
           </section>
 
+          <section class="pane hidden" data-pane="admin">
+            <div class="flabel" style="font-size:14px;margin-bottom:14px">&gt; АДМИНИСТРАЦИЯ</div>
+            <div id="adm-note" class="adm-note hidden"></div>
+
+            <div class="adm-card">
+              <div class="adm-h">▸ СМЕНА ПАРОЛЯ <span id="adm-whoami" class="adm-who"></span></div>
+              <input class="adm-in" id="pw-old" type="password" placeholder="текущий пароль" autocomplete="off">
+              <input class="adm-in" id="pw-new" type="password" placeholder="новый пароль (мин. 8 символов)" autocomplete="off">
+              <input class="adm-in" id="pw-new2" type="password" placeholder="повторите новый пароль" autocomplete="off">
+              <button class="adm-btn" id="pw-save">СМЕНИТЬ ПАРОЛЬ</button>
+              <div class="adm-msg" id="pw-msg"></div>
+            </div>
+
+            <div class="adm-card hidden" id="adm-users-card">
+              <div class="adm-h">▸ ДОБАВИТЬ ПОЛЬЗОВАТЕЛЯ <span class="adm-who">(только админ PUH)</span></div>
+              <input class="adm-in" id="nu-login" placeholder="логин (2–32: A-Z, 0-9, _ . -)" autocomplete="off">
+              <input class="adm-in" id="nu-pass" type="password" placeholder="пароль (мин. 8 символов)" autocomplete="off">
+              <input class="adm-in" id="nu-note" placeholder="пометка в базе (например: клиент / сотрудник)" autocomplete="off">
+              <button class="adm-btn" id="nu-save">СОЗДАТЬ ПОЛЬЗОВАТЕЛЯ</button>
+              <div class="adm-msg" id="nu-msg"></div>
+
+              <div class="adm-h" style="margin-top:20px">▸ ПОЛЬЗОВАТЕЛИ И ВЕТКИ</div>
+              <div id="users-list"></div>
+            </div>
+          </section>
+
         </div>
       </main>
 
@@ -479,6 +521,7 @@
   <script src="/static/vendor/ethers.umd.min.js"></script>
   <script src="/static/derive.js"></script>
   <script src="/static/tasks.js"></script>
+  <script src="/static/admin.js"></script>
   <script>
     function selTab(el){
       document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
@@ -488,6 +531,7 @@
         p.classList.toggle('hidden', p.getAttribute('data-pane') !== t);
       });
       if (t === 'db' && window.renderDB) window.renderDB();
+      if (t === 'admin' && window.renderAdmin) window.renderAdmin();
     }
   </script>
 </body>
