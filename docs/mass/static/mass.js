@@ -61,7 +61,8 @@
   function checkAct(r) { if (r.chain === "evm") return evmAll(r.addr); if (r.chain === "ethereum-classic") return etcOne(r.addr); return blockchair(r.chain, r.addr); }
   function aliveCount(results) { return (results || []).filter(function (r) { return r.alive; }).length; }
   function slim(rows) { return rows.map(function (r) { var a = r.act || {}; return { coin: r.coin, std: r.std, path: r.path, addr: r.addr, bal: a.bal, received: a.received, txn: a.txn, alive: !!a.alive, chains: a.chains || "" }; }); }
-  function fatten(results) { return (results || []).map(function (r) { return { coin: r.coin, std: r.std, path: r.path, addr: r.addr, act: { bal: r.bal, received: r.received, txn: r.txn, alive: r.alive, chains: r.chains } }; }); }
+  function fatten(results) { return (results || []).map(function (r) { return { coin: r.coin, std: r.std, path: r.path, addr: r.addr, usd: r.usd, act: { bal: r.bal, received: r.received, txn: r.txn, alive: r.alive, chains: r.chains } }; }); }
+  function usdStr(r, a) { return (r.usd != null && (a.alive || r.usd > 0)) ? ' <b style="color:#e8b73a">(~$' + Number(r.usd).toLocaleString("en-US", { maximumFractionDigits: 2 }) + ")</b>" : ""; }
   function buildReport(rows) {
     var coins = ["BTC", "LTC", "DOGE", "DASH", "ETH", "ETC"], html = "";
     coins.forEach(function (coin) {
@@ -69,7 +70,7 @@
       html += '<div class="net-group"><div class="net-h">' + coin + (coin === "ETH" ? " · EVM (ETH/BSC/Polygon)" : "") + "</div>";
       rs.forEach(function (r) {
         var a = r.act || {}, alive = a.alive;
-        var balTxt = a.bal == null ? "…" : esc(a.bal) + (a.received && a.received !== "—" && a.received !== a.bal ? " (получено " + esc(a.received) + ")" : "");
+        var balTxt = a.bal == null ? "…" : esc(a.bal) + usdStr(r, a) + (a.received && a.received !== "—" && a.received !== a.bal ? " (получено " + esc(a.received) + ")" : "");
         var flag = a.bal == null ? "…" : alive ? '<a href="' + explorerUrl(r.coin, a.chains, r.addr) + '" target="_blank" rel="noopener" class="tx-link">● ЖИВОЙ' + (a.chains ? " [" + esc(a.chains) + "]" : "") + (a.txn ? " тx" + a.txn : "") + " ↗</a>" : "пусто";
         html += '<div class="addr-row' + (alive ? " alive" : "") + '"><span class="ar-std">' + esc(r.std) + '<br><span style="opacity:.6">' + esc(r.path) + "</span></span><span class=\"ar-addr\">" + (r.addr ? esc(r.addr) : "—") + '</span><span class="ar-bal">' + balTxt + '</span><span class="ar-flag ' + (a.bal == null ? "empty" : alive ? "alive" : "empty") + '">' + flag + "</span></div>";
       });

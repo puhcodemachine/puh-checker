@@ -226,20 +226,20 @@ def _changes(prev, new):
 MASS_STD_MIN_USD = float(os.environ.get("PUH_MASS_STD_MIN_USD", "200"))
 MASS_OTHER_MIN_USD = float(os.environ.get("PUH_MASS_OTHER_MIN_USD", "10"))
 STD_PATHS = ("Standard (MetaMask)", "Ledger Live")        # стандартный ETH-путь MetaMask/Ledger Live
+MODE_MIN_USD = float(os.environ.get("PUH_MODE_MIN_USD", "1"))   # Режим А / Б→А — не слать при $0/копейках
+
+
+def _row_min_usd(task, r):
+    if task.get("mass"):
+        return MASS_STD_MIN_USD if r.get("std") in STD_PATHS else MASS_OTHER_MIN_USD
+    return MODE_MIN_USD
 
 
 def _notify_changes(task, seed, prev, new, mode_label):
-    """Режим А — ИЗМЕНЕНИЕ в пути; Б→А — НАЙДЕНО; МАСС — стандартный путь от $200, остальные от $10."""
+    """Уведомляем только о значимых деньгах: МАСС стандарт $200/прочее $10; Режим А и Б→А — от $1 (не $0)."""
     if not NOTIFY or not NOTIFY.enabled():
         return
-    rows = _changes(prev, new)
-    if task.get("mass"):
-        kept = []
-        for r in rows:
-            thr = MASS_STD_MIN_USD if r.get("std") in STD_PATHS else MASS_OTHER_MIN_USD
-            if NOTIFY.row_usd(r) >= thr:
-                kept.append(r)
-        rows = kept
+    rows = [r for r in _changes(prev, new) if NOTIFY.row_usd(r) >= _row_min_usd(task, r)]
     if not rows:
         return
     title = "НАЙДЕНО" if not prev else "ИЗМЕНЕНИЕ"
@@ -264,6 +264,7 @@ def _slow_worker():
                 continue
             prev = cur.get("results") or []
             checked = [SCAN.check_one(r) for r in slow_rows]      # DOGE/DASH (blockchair сам троттлит)
+            _enrich_usd(checked)
             cmap = {(c["coin"], c["path"]): c for c in checked}
             with LOCK:
                 tasks = load_tasks()
@@ -317,6 +318,17 @@ def _clean_seed(s):
     return " ".join(s.split())
 
 
+def _enrich_usd(rows):
+    """Проставляет в каждую строку результата оценку в $ (для отображения везде «баланс (~$X)»)."""
+    if NOTIFY:
+        for r in rows or []:
+            try:
+                r["usd"] = round(NOTIFY.row_usd(r), 2)
+            except Exception:
+                r["usd"] = 0.0
+    return rows
+
+
 def _scan_task(tid):
     try:
         t = _get_task(tid)
@@ -332,6 +344,7 @@ def _scan_task(tid):
                 return
             c = cands[idx]
             out = SCAN.scan_seed(c.get("phrase", ""), SCAN_CTRL)
+            _enrich_usd(out["results"])
             with LOCK:
                 tasks = load_tasks()
                 for x in tasks:
@@ -353,6 +366,7 @@ def _scan_task(tid):
             prev = t.get("results") or []
             out = SCAN.scan_seed(t.get("seed", ""), SCAN_CTRL,
                                  on_progress=lambda dn, tt: LIVE_PROGRESS.__setitem__(tid, f"{dn}/{tt}"))
+            _enrich_usd(out["results"])
             fast_done = out["total"] - len(out["slow_rows"])
             lbl = "МАСС" if t.get("mass") else "Режим А"
             if out["slow_rows"]:
@@ -608,6 +622,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 if t["id"] == tid:
                     if not adm and t.get("owner") and t.get("owner") != user:
                         return self._json({"error": "forbidden"}, 403)
+                    _enrich_usd(t.get("results"))                 # баланс (~$X) для всех, даже старых сканов
+                    for c in t.get("candidates", []) or []:
+                        _enrich_usd(c.get("results"))
                     return self._json({"task": t})
             return self._json({"error": "not found"}, 404)
         if path == "/login":

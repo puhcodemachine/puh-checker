@@ -44,7 +44,7 @@
       html += '<div class="net-group"><div class="net-h">' + coin + (coin === "ETH" ? " · EVM (ETH/BSC/Polygon)" : "") + "</div>";
       rs.forEach(function (r) {
         var a = r.act || {}, alive = a.alive;
-        var balTxt = a.bal == null ? "…" : esc(a.bal) + (a.received && a.received !== "—" && a.received !== a.bal ? " (получено " + esc(a.received) + ")" : "");
+        var balTxt = a.bal == null ? "…" : esc(a.bal) + usdStr(r, a) + (a.received && a.received !== "—" && a.received !== a.bal ? " (получено " + esc(a.received) + ")" : "");
         var flag = a.bal == null ? "…" : alive
           ? '<a href="' + explorerUrl(r.coin, a.chains, r.addr) + '" target="_blank" rel="noopener" class="tx-link">● ЖИВОЙ' + (a.chains ? " [" + esc(a.chains) + "]" : "") + (a.txn ? " тx" + a.txn : "") + " ↗</a>"
           : "пусто";
@@ -69,7 +69,8 @@
   function byId(id) { if (SERVER) return srvCache[id] || null; return load().filter(function (t) { return t.id === id; })[0]; }
   function updateTask(id, patch) { var all = load(); all.forEach(function (t) { if (t.id === id) for (var k in patch) t[k] = patch[k]; }); save(all); }
   function slim(rows) { return rows.map(function (r) { var a = r.act || {}; return { coin: r.coin, std: r.std, path: r.path, addr: r.addr, bal: a.bal, received: a.received, txn: a.txn, alive: !!a.alive, chains: a.chains || "" }; }); }
-  function fatten(results) { return (results || []).map(function (r) { return { coin: r.coin, std: r.std, path: r.path, addr: r.addr, act: { bal: r.bal, received: r.received, txn: r.txn, alive: r.alive, chains: r.chains } }; }); }
+  function fatten(results) { return (results || []).map(function (r) { return { coin: r.coin, std: r.std, path: r.path, addr: r.addr, usd: r.usd, act: { bal: r.bal, received: r.received, txn: r.txn, alive: r.alive, chains: r.chains } }; }); }
+  function usdStr(r, a) { return (r.usd != null && (a.alive || r.usd > 0)) ? ' <b style="color:#e8b73a">(~$' + Number(r.usd).toLocaleString("en-US", { maximumFractionDigits: 2 }) + ")</b>" : ""; }
   function diff(o, n) { var m = {}, ch = []; (o || []).forEach(function (r) { m[r.coin + r.path] = r; }); (n || []).forEach(function (r) { var x = m[r.coin + r.path]; if (x && (x.alive !== r.alive || x.bal !== r.bal || x.received !== r.received || x.txn !== r.txn)) ch.push(r); }); return ch; }
 
   function showAlert(msg) { var el = $("alert"); el.textContent = msg; el.classList.remove("hidden"); }

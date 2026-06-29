@@ -126,9 +126,28 @@ def etc_one(addr):
     w = int(b, 16) if b else 0; nc = int(n, 16) if n else 0
     return {"bal": f"{w/1e18:.6f}", "received": "—", "txn": nc, "alive": w > 0 or nc > 0, "chains": "ETC" if (w > 0 or nc > 0) else ""}
 
+def blockcypher(chain, addr):                              # DOGE/DASH — рабочий из дата-центра (free)
+    net = "doge" if chain == "dogecoin" else "dash"
+    d = _get(f"https://api.blockcypher.com/v1/{net}/main/addrs/{addr}/balance")
+    if d is None: return None
+    bal = d.get("final_balance", d.get("balance", 0)) or 0
+    recv = d.get("total_received", 0) or 0
+    txn = d.get("n_tx", 0) or 0
+    return {"bal": f"{bal/1e8:.8f}", "received": f"{recv/1e8:.8f}", "txn": txn, "alive": bal > 0 or recv > 0 or txn > 0}
+
+def doge_dash(chain, addr):                                # blockcypher (с ретраями) → фолбэк blockchair
+    for n in range(3):
+        try:
+            r = blockcypher(chain, addr)
+            if r is not None: return r
+        except RateLimited:
+            pass
+        time.sleep(0.6 + n)                                # slow-очередь не торопится — добиваем лимит
+    return blockchair(chain, addr)
+
 def check(row):
     c = row["chain"]
     if c == "evm": return evm_all(row["addr"])
     if c == "ethereum-classic": return etc_one(row["addr"])
     if c in ESPLORA: return esplora(ESPLORA[c], row["addr"])
-    return blockchair(c, row["addr"])                      # dogecoin, dash
+    return doge_dash(c, row["addr"])                       # dogecoin, dash

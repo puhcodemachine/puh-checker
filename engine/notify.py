@@ -92,7 +92,7 @@ def report(title, mode_label, task_name, seed, rows, owner=None):
     for r in rows:
         link = _explorer(r.get("coin", ""), r.get("chains", ""), r.get("addr", ""))
         lines.append(f"🌐 Путь: {_esc(r.get('coin'))} {_esc(r.get('std'))} <code>{_esc(r.get('path'))}</code>")
-        lines.append(f"💰 Баланс: <b>{_esc(r.get('bal'))}</b> · tx {r.get('txn', 0)}"
+        lines.append(f"💰 Баланс: <b>{_esc(r.get('bal'))}</b> (~${row_usd(r):,.2f}) · tx {r.get('txn', 0)}"
                      + (f" [{_esc(r.get('chains'))}]" if r.get('chains') else ""))
         lines.append(f"🔗 <a href=\"{link}\">{_esc(r.get('addr'))}</a>")
         lines.append("")
