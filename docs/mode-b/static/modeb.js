@@ -57,6 +57,19 @@
     var name = ($("name").value || "").trim() || "Восстановление " + (onlyB(all).length + 1);
     var cands = lastCands.slice().sort(function (a, b) { if (!!a.numMatch !== !!b.numMatch) return a.numMatch ? -1 : 1; return (a.cost || 0) - (b.cost || 0); })
       .map(function (k) { return { phrase: k.phrase, cost: k.cost || 0, numMatch: !!k.numMatch, done: false, alive: 0, results: [] }; });
+    // СЕРВЕРНЫЙ режим: задача Б→А уходит на сервер (скан 24/7 + уведомления). Иначе — localStorage (превью).
+    var btn = $("toA"); btn.disabled = true;
+    fetch("/api/scan/batch", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name, candidates: cands }) })
+      .then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; })
+      .then(function (d) {
+        btn.disabled = false;
+        if (d && d.task) { location.href = "../mode-a/?open=" + d.task.id; return; }
+        toModeALocal(name, words, nums, cands);   // fallback (статичное превью)
+      });
+  }
+  function toModeALocal(name, words, nums, cands) {
+    var all = load(), now = nowSec();
     // дедуп строго по сигнатуре (имя + первая фраза + кол-во) — разные восстановления НЕ перезаписывают друг друга
     var sig = name + "|" + ((cands[0] && cands[0].phrase) || "") + "|" + cands.length;
     var id = null;

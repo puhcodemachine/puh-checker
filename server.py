@@ -11,8 +11,10 @@ import hmac
 import http.server
 import json
 import os
+import posixpath
 import re
 import secrets
+import sys
 import threading
 import time
 import urllib.parse
@@ -36,6 +38,11 @@ SECURE_COOKIE = bool(os.environ.get("PUH_HTTPS"))  # на проде с HTTPS: P
 MAX_BODY = 2_000_000                             # лимит тела запроса (анти-DoS)
 MAX_LOGIN_FAILS = 8                              # блок после N неудач за окно
 LOGIN_WINDOW = 600                               # окно блокировки, сек
+SUBAPPS = ("mode-a", "mode-b", "mass")           # отдельные страницы (под авторизацией)
+CTYPES = {".js": "application/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
+          ".html": "text/html; charset=utf-8", ".json": "application/json; charset=utf-8",
+          ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon",
+          ".woff2": "font/woff2", ".woff": "font/woff", ".map": "application/json", ".txt": "text/plain; charset=utf-8"}
 
 
 def _enc_key():
@@ -115,11 +122,12 @@ def save_tasks(tasks):
 
 
 def task_summary(t):
-    return {"id": t["id"], "name": t["name"], "type": t["type"], "status": t["status"],
-            "modes": t["modes"], "created": t["created"], "started": t["started"],
+    return {"id": t["id"], "name": t.get("name"), "type": t.get("type"), "status": t.get("status"),
+            "modes": t.get("modes"), "created": t.get("created"), "started": t.get("started"),
             "stopped": t.get("stopped"), "pausedAt": t.get("pausedAt"),
             "mode": t.get("mode", "B"), "alive": t.get("alive", 0), "lastCheck": t.get("lastCheck"),
             "progress": t.get("progress"), "deleted": t.get("deleted"),
+            "hits": t.get("hits", 0), "candidates": len(t.get("candidates", [])),
             "results": len(t.get("results", [])), "owner": t.get("owner")}
 
 
@@ -129,6 +137,143 @@ def verify(user, pw):
         return False
     dk = hashlib.pbkdf2_hmac("sha256", pw.encode(), bytes.fromhex(u["salt"]), u["iters"])
     return hmac.compare_digest(dk.hex(), u["hash"])
+
+
+# ---------- серверный воркер скана активности (работает 24/7) ----------
+sys.path.insert(0, os.path.join(BASE, "engine"))
+try:
+    import worker as SCAN          # derive + activity + scan_seed (bip_utils)
+    import notify as NOTIFY        # Telegram-уведомления "НАЙДЕНО"
+    SCAN_CTRL = SCAN.Ctrl()        # глобальный AIMD-контроллер (потоки сидов)
+except Exception as _e:            # движок может быть недоступен на превью
+    SCAN = None
+    NOTIFY = None
+    SCAN_CTRL = None
+    print("[puh-web] движок скана не загружен:", _e, flush=True)
+
+
+def _changes(prev, new):
+    """Активные пути, которые НОВЫЕ или ИЗМЕНИЛИСЬ относительно прошлой проверки."""
+    pm = {r["coin"] + r["path"]: r for r in (prev or [])}
+    out = []
+    for r in (new or []):
+        p = pm.get(r["coin"] + r["path"])
+        if p is None:
+            if r.get("alive"):
+                out.append(r)                       # новый активный путь
+        elif (p.get("alive") != r.get("alive") or p.get("bal") != r.get("bal")
+              or p.get("txn") != r.get("txn") or p.get("received") != r.get("received")):
+            if r.get("alive") or p.get("alive"):    # изменение на активном пути (вход/выход)
+                out.append(r)
+    return out
+
+
+def _notify_changes(task, seed, prev, new, mode_label):
+    """Режим А — ИЗМЕНЕНИЕ в пути; Режим Б→А — НАЙДЕНО (средства/активность)."""
+    if not NOTIFY or not NOTIFY.enabled():
+        return
+    rows = _changes(prev, new)
+    if not rows:
+        return
+    title = "НАЙДЕНО" if not prev else "ИЗМЕНЕНИЕ"
+    try:
+        NOTIFY.report(title, mode_label, task.get("name"), seed, rows, owner=task.get("owner"))
+    except Exception as e:
+        print("[notify]", e, flush=True)
+
+BUSY = set()
+BUSY_LOCK = threading.Lock()
+
+
+def _claim(tid):
+    with BUSY_LOCK:
+        if tid in BUSY:
+            return False
+        BUSY.add(tid)
+        return True
+
+
+def patch_task(tid, patch):
+    with LOCK:
+        tasks = load_tasks()
+        for x in tasks:
+            if x["id"] == tid:
+                x.update(patch)
+        save_tasks(tasks)
+
+
+def _get_task(tid):
+    return next((x for x in load_tasks() if x["id"] == tid), None)
+
+
+def _scan_task(tid):
+    try:
+        t = _get_task(tid)
+        if not t or not SCAN:
+            return
+        if t.get("mode") == "BA":
+            cands = t.get("candidates") or []
+            for i, c in enumerate(cands):
+                cur = _get_task(tid)
+                if not cur or cur.get("status") == "red" or cur.get("deleted"):
+                    return
+                out = SCAN.scan_seed(c.get("phrase", ""), SCAN_CTRL)
+                with LOCK:
+                    tasks = load_tasks()
+                    for x in tasks:
+                        if x["id"] == tid and i < len(x.get("candidates", [])):
+                            x["candidates"][i]["results"] = out["results"]
+                            x["candidates"][i]["alive"] = out["alive"]
+                            x["candidates"][i]["done"] = True
+                            done = sum(1 for cc in x["candidates"] if cc.get("done"))
+                            x["hits"] = sum(1 for cc in x["candidates"] if (cc.get("alive") or 0) > 0)
+                            x["alive"] = sum(cc.get("alive", 0) for cc in x["candidates"])
+                            x["progress"] = f"{done}/{len(x['candidates'])}"
+                    save_tasks(tasks)
+                _notify_changes(cur, c.get("phrase", ""), (c.get("results") or []), out["results"], "Б→А")
+            t2 = _get_task(tid) or {}
+            patch_task(tid, {"status": "amber" if t2.get("hits") else "green",
+                             "lastCheck": time.time(), "scan_done": True})
+        else:                       # mode A (в т.ч. масс — одна сид = одна задача)
+            prev = t.get("results") or []
+            out = SCAN.scan_seed(t.get("seed", ""), SCAN_CTRL)
+            patch_task(tid, {"results": out["results"], "alive": out["alive"],
+                             "status": "amber" if out["alive"] else "green",
+                             "lastCheck": time.time(), "scan_done": True,
+                             "progress": f"{len(out['results'])}/{len(out['results'])}"})
+            _notify_changes(t, t.get("seed", ""), prev, out["results"], "Режим А")
+    except Exception as e:
+        print("[scan] ошибка задачи", tid, e, flush=True)
+        patch_task(tid, {"status": "red", "scanError": str(e)[:200]})
+    finally:
+        with BUSY_LOCK:
+            BUSY.discard(tid)
+
+
+def worker_loop():
+    while True:
+        try:
+            now = time.time()
+            tasks = load_tasks()
+            for t in tasks:                       # авто-перепроверка раз в 24ч
+                if (not t.get("deleted") and t.get("mode") in ("A", "BA")
+                        and t.get("status") in ("green", "amber") and t.get("scan_done")
+                        and now - (t.get("lastCheck") or 0) > 86400):
+                    patch_task(t["id"], {"status": "running", "scan_done": False})
+            tasks = load_tasks()
+            pend = [t for t in tasks if not t.get("deleted") and t.get("mode") in ("A", "BA")
+                    and t.get("status") in ("running", "queued") and t["id"] not in BUSY]
+            rem = len(pend) + len(BUSY)
+            eff = SCAN_CTRL.effective(rem) if SCAN_CTRL else 1
+            for t in pend:
+                if len(BUSY) >= max(1, eff):
+                    break
+                if _claim(t["id"]):
+                    threading.Thread(target=_scan_task, args=(t["id"],), daemon=True).start()
+            time.sleep(2)
+        except Exception as e:
+            print("[worker] loop err", e, flush=True)
+            time.sleep(5)
 
 
 def tpl(name):
@@ -186,16 +331,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_header(k, v)
         self.end_headers()
 
-    def _serve_static(self, path):
-        rel = path[len("/static/"):]
-        if not rel or "/" in rel or ".." in rel:
+    def _safe_path(self, rel):
+        rel = posixpath.normpath(rel.lstrip("/"))
+        if rel.startswith("..") or rel.startswith("/") or "\x00" in rel:
+            return None
+        fp = os.path.join(BASE, *rel.split("/"))
+        base = os.path.abspath(BASE)
+        if not os.path.abspath(fp).startswith(base + os.sep):
+            return None
+        return fp
+
+    def _serve_file(self, rel):
+        fp = self._safe_path(rel)
+        if not fp or not os.path.isfile(fp):
             return self.send_error(404)
-        fp = os.path.join(BASE, "static", rel)
-        if not os.path.isfile(fp):
-            return self.send_error(404)
-        ctype = ("application/javascript; charset=utf-8" if rel.endswith(".js")
-                 else "text/css; charset=utf-8" if rel.endswith(".css")
-                 else "application/octet-stream")
+        ctype = CTYPES.get(os.path.splitext(fp)[1].lower(), "application/octet-stream")
         with open(fp, "rb") as f:
             data = f.read()
         self.send_response(200)
@@ -250,7 +400,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self.send_error(403)
         path = self.path.split("?")[0]
         if path.startswith("/static/"):
-            return self._serve_static(path)
+            return self._serve_file(path)
+        for sa in SUBAPPS:                                   # Режим А/Б/Масс — отдельные страницы под авторизацией
+            if path == "/" + sa or path == "/" + sa + "/" or path.startswith("/" + sa + "/"):
+                if not self._user():
+                    return self._redirect("/login")
+                rel = (sa + "/index.html") if path in ("/" + sa, "/" + sa + "/") else path
+                return self._serve_file(rel)
         if path == "/api/account":
             user = self._user()
             if not user:
@@ -307,6 +463,65 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if not self._user():
                 return self._json({"error": "auth"}, 401)
             return self._create_task()
+        if path in ("/api/scan", "/api/scan/bulk", "/api/scan/batch"):
+            user = self._user()
+            if not user:
+                return self._json({"error": "auth"}, 401)
+            raw = self._read_body()
+            if raw is None:
+                return self._json({"error": "too large"}, 413)
+            try:
+                body = json.loads(raw or b"{}")
+            except json.JSONDecodeError:
+                return self._json({"error": "bad json"}, 400)
+            now = time.time()
+            if path == "/api/scan":                                  # Режим А — одна сид
+                seed = (body.get("seed") or "").strip().lower()
+                if len(seed.split()) < 12:
+                    return self._json({"error": "нужна валидная сид (12+ слов)"}, 400)
+                tid = secrets.token_hex(3)
+                name = (body.get("name") or "").strip() or ("Проверка " + tid.upper()[:4])
+                task = {"id": tid, "name": name, "mode": "A", "type": "проверка активности · сервер 24/7",
+                        "status": "running", "seed": seed, "words": seed, "results": [], "alive": 0,
+                        "progress": "0/43", "created": now, "started": now, "lastCheck": None, "owner": user,
+                        "log": [{"ts": now, "msg": "серверный скан поставлен в очередь"}]}
+                with LOCK:
+                    tasks = load_tasks(); tasks.append(task); save_tasks(tasks)
+                return self._json({"ok": True, "task": task_summary(task)})
+            if path == "/api/scan/bulk":                             # Масс — много сид (числовые имена)
+                seeds = body.get("seeds") or []
+                added = dup = 0
+                with LOCK:
+                    tasks = load_tasks()
+                    have = {t.get("seed") for t in tasks if t.get("owner") == user}
+                    base = max([int(t["name"]) for t in tasks if t.get("owner") == user and str(t.get("name", "")).isdigit()] or [0])
+                    for s in seeds[:20000]:
+                        s = (s or "").strip().lower()
+                        if len(s.split()) < 12:
+                            continue
+                        if s in have:
+                            dup += 1; continue
+                        have.add(s); base += 1; added += 1
+                        tasks.append({"id": secrets.token_hex(3), "name": str(base), "mode": "A", "type": "масс · сервер",
+                                      "status": "running", "seed": s, "words": s, "results": [], "alive": 0, "progress": "0/43",
+                                      "created": now, "started": now, "lastCheck": None, "owner": user, "mass": True, "log": []})
+                    save_tasks(tasks)
+                return self._json({"ok": True, "added": added, "dup": dup})
+            cands = body.get("candidates") or []                     # Б→А — пакет вариаций
+            if not cands:
+                return self._json({"error": "нет вариаций"}, 400)
+            tid = secrets.token_hex(3)
+            name = (body.get("name") or "").strip() or ("Б→А " + tid.upper()[:4])
+            task = {"id": tid, "name": name, "mode": "BA", "fromB": True, "type": "Б→А · вариаций " + str(len(cands)),
+                    "status": "running", "alive": 0, "hits": 0, "progress": "0/" + str(len(cands)),
+                    "candidates": [{"phrase": (c.get("phrase") if isinstance(c, dict) else c),
+                                    "numMatch": bool(c.get("numMatch")) if isinstance(c, dict) else False,
+                                    "cost": (c.get("cost") if isinstance(c, dict) else 0), "done": False, "alive": 0, "results": []}
+                                   for c in cands],
+                    "created": now, "started": now, "lastCheck": None, "owner": user, "log": []}
+            with LOCK:
+                tasks = load_tasks(); tasks.append(task); save_tasks(tasks)
+            return self._json({"ok": True, "task": task_summary(task)})
         m = re.match(r"^/api/tasks/([0-9a-f]+)/stop$", path)
         if m:
             user = self._user()
@@ -429,5 +644,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    print(f"[puh-web] http://0.0.0.0:{PORT}  (login: /login)", flush=True)
-    http.server.ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
+    HOST = os.environ.get("PUH_HOST", "0.0.0.0")     # на сервере за nginx: PUH_HOST=127.0.0.1
+    if SCAN and os.environ.get("PUH_NO_WORKER") != "1":
+        threading.Thread(target=worker_loop, daemon=True).start()
+        print("[puh-web] фоновый воркер скана запущен (24/7)", flush=True)
+    print(f"[puh-web] http://{HOST}:{PORT}  (login: /login)", flush=True)
+    http.server.ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()

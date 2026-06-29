@@ -59,11 +59,14 @@
 
   // ---------- хранилище (общее с панелью) ----------
   var LS = "puh_tasks", curId = null, lastRows = null, running = {};
+  var SERVER = false, srvList = [], srvCache = {}, srvPoll = null;   // серверный режим (скан на сервере 24/7)
+  function api(p, opts) { return fetch(p, Object.assign({ credentials: "same-origin", headers: { "Content-Type": "application/json" } }, opts || {})).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }); }
+  function isRunning(id) { return SERVER ? !!(srvCache[id] && srvCache[id].status === "running") : !!running[id]; }
   function load() { try { return JSON.parse(localStorage.getItem(LS)) || []; } catch (e) { return []; } }
   function save(a) { try { localStorage.setItem(LS, JSON.stringify(a)); } catch (e) {} }
   function onlyA(a) { return (a || []).filter(function (t) { return t.mode === "A" && !t.deleted; }); }
   function onlyAB(a) { return (a || []).filter(function (t) { return (t.mode === "A" || t.mode === "BA") && !t.deleted; }); }
-  function byId(id) { return load().filter(function (t) { return t.id === id; })[0]; }
+  function byId(id) { if (SERVER) return srvCache[id] || null; return load().filter(function (t) { return t.id === id; })[0]; }
   function updateTask(id, patch) { var all = load(); all.forEach(function (t) { if (t.id === id) for (var k in patch) t[k] = patch[k]; }); save(all); }
   function slim(rows) { return rows.map(function (r) { var a = r.act || {}; return { coin: r.coin, std: r.std, path: r.path, addr: r.addr, bal: a.bal, received: a.received, txn: a.txn, alive: !!a.alive, chains: a.chains || "" }; }); }
   function fatten(results) { return (results || []).map(function (r) { return { coin: r.coin, std: r.std, path: r.path, addr: r.addr, act: { bal: r.bal, received: r.received, txn: r.txn, alive: r.alive, chains: r.chains } }; }); }
@@ -71,7 +74,7 @@
 
   function showAlert(msg) { var el = $("alert"); el.textContent = msg; el.classList.remove("hidden"); }
   function renderTaskList() {
-    var tasks = onlyAB(load()), wrap = $("tasks-wrap"), el = $("task-list");
+    var tasks = SERVER ? srvList : onlyAB(load()), wrap = $("tasks-wrap"), el = $("task-list");
     if (!tasks.length) { wrap.classList.add("hidden"); return; }
     wrap.classList.remove("hidden");
     el.innerHTML = tasks.map(function (t) {
@@ -93,7 +96,7 @@
 
   function renderShown(i, total) {
     render(lastRows || []);
-    var t = byId(curId) || {}, run = !!running[curId], alive = aliveCount(slim(lastRows || []));
+    var t = byId(curId) || {}, run = isRunning(curId), alive = aliveCount(slim(lastRows || []));
     $("scanline").textContent = run ? ("проверка " + (i != null ? i + "/" + total : (t.progress || ""))) : "";
     $("summary").className = "summary " + (alive ? "hit" : "miss");
     $("summary").innerHTML = (run ? "⏳ идёт проверка в фоне… " : "") + (alive ? "● активность на " + alive + " адрес(ах) — сид ЖИВАЯ" : "○ активности не найдено") + (t.lastCheck && !run ? " · " + fmtDT(t.lastCheck) : "");
@@ -185,7 +188,7 @@
   function renderBAOpen(id) {
     var t = byId(id); if (!t) return;
     $("single-mode").classList.add("hidden"); $("ba-view").classList.remove("hidden");
-    var run = !!running[id], tt = baTotals(t), uci = firstUndone(t);
+    var run = isRunning(id), tt = baTotals(t), uci = firstUndone(t);
     $("ba-title").innerHTML = '&gt; <span class="ba-badge">Б→А</span> ' + esc(t.name) + " · пакетная проверка вариаций";
     var sum = $("ba-summary"); sum.className = "summary " + (tt.hits ? "hit" : "miss");
     sum.innerHTML = (run ? "⏳ идёт проверка в фоне… " : "") + "вариаций: <b>" + tt.total + "</b> · проверено: <b>" + tt.done + "/" + tt.total + "</b> · живых вариаций: <b>" + tt.hits + "</b>" + (tt.hits ? " — ✓ ЕСТЬ НАХОДКА" : (run ? "" : " · активности нет"));
@@ -220,12 +223,46 @@
     curId = null; renderTaskList(); window.scrollTo(0, 0);
   }
 
+  // ---------- серверный режим: задача на сервере + поллинг (скан 24/7) ----------
+  function srvRefreshList(then) {
+    api("/api/tasks").then(function (d) {
+      srvList = ((d && d.tasks) || []).filter(function (t) { return (t.mode === "A" || t.mode === "BA") && !t.deleted; })
+        .sort(function (a, b) { return (b.started || 0) - (a.started || 0); });
+      renderTaskList(); if (then) then();
+    });
+  }
+  function srvFetch(id, then) {
+    api("/api/tasks/" + id).then(function (d) { if (d && d.task) srvCache[id] = d.task; if (then) then(); });
+  }
+  function startServer(seed) {
+    var name = ($("name").value || "").trim();
+    var btn = $("run"); btn.disabled = true; btn.textContent = "⏳ ОТПРАВКА…";
+    api("/api/scan", { method: "POST", body: JSON.stringify({ name: name, seed: seed }) }).then(function (d) {
+      btn.disabled = false; btn.textContent = "▶ ПРОВЕРИТЬ ВСЕ ПУТИ";
+      if (!d || !d.task) { $("seed-status").className = "vstatus red"; $("seed-status").textContent = "✗ сервер не принял задачу"; return; }
+      curId = d.task.id; lastRows = null; $("report").innerHTML = ""; $("summary").innerHTML = "";
+      $("close-task").textContent = "✕ ЗАКРЫТЬ (сервер сканит 24/7)"; $("close-task").classList.remove("hidden");
+      $("name").value = ""; $("seed").value = "";
+      srvFetch(curId, function () { renderShown(); }); srvRefreshList();
+    });
+  }
+  function srvPollTick() {
+    srvRefreshList();
+    if (!curId) return;
+    srvFetch(curId, function () {
+      var t = srvCache[curId]; if (!t) return;
+      if (t.mode === "BA") { if (!$("ba-view").classList.contains("hidden")) renderBAOpen(curId); }
+      else if (!$("single-mode").classList.contains("hidden")) { lastRows = fatten(t.results || []); renderShown(); }
+    });
+  }
+
   // ---------- старт проверки (создаёт фоновую задачу сразу) ----------
   function startCheck() {
     var C = window.PUHCORE, seed = ($("seed").value || "").trim().toLowerCase().replace(/\s+/g, " ");
     var v = C.validateWords(seed);
     if (v.checksum !== true) { $("seed-status").className = "vstatus red"; $("seed-status").textContent = "✗ фраза невалидна (" + v.msg + ")"; return; }
-    $("seed-status").className = "vstatus green"; $("seed-status").textContent = "✓ валидна — задача запущена, идёт фоновая проверка";
+    $("seed-status").className = "vstatus green"; $("seed-status").textContent = "✓ валидна — задача отправлена на сервер (скан 24/7)";
+    if (SERVER) return startServer(seed);
     var all = load(), now = nowSec();
     var name = ($("name").value || "").trim() || "Проверка " + (onlyA(all).length + 1);
     var existing = onlyA(all).filter(function (t) { return t.seed === seed; })[0];   // дедуп по сиду
@@ -257,24 +294,28 @@
   }
 
   window.maOpen = function (id) {
+    if (SERVER && !srvCache[id]) { srvFetch(id, function () { window.maOpen(id); }); return; }
     var t = byId(id); if (!t) return;
-    if (t.mode === "BA") { curId = id; if (t.changed) updateTask(id, { changed: false }); $("alert").classList.add("hidden"); renderBAOpen(id); renderTaskList(); window.scrollTo(0, 0); return; }
+    if (t.mode === "BA") { curId = id; if (!SERVER && t.changed) updateTask(id, { changed: false }); $("alert").classList.add("hidden"); renderBAOpen(id); renderTaskList(); window.scrollTo(0, 0); return; }
     $("ba-view").classList.add("hidden"); $("single-mode").classList.remove("hidden");
     var rb = $("run"); rb.disabled = false; rb.textContent = "▶ ПРОВЕРИТЬ ВСЕ ПУТИ";
     curId = id; $("name").value = t.name; $("seed").value = t.seed;
-    if (t.changed) updateTask(id, { changed: false });
+    if (!SERVER && t.changed) updateTask(id, { changed: false });
     lastRows = fatten((byId(id) || t).results);   // всегда из данных открываемой задачи (не чужие)
     renderShown();
-    $("close-task").textContent = running[id] ? "✕ ЗАКРЫТЬ В ТРЕЙ (работает в фоне)" : "✕ ЗАКРЫТЬ";
+    $("close-task").textContent = isRunning(id) ? "✕ ЗАКРЫТЬ В ТРЕЙ (работает в фоне)" : "✕ ЗАКРЫТЬ";
     $("close-task").classList.remove("hidden"); $("alert").classList.add("hidden");
-    if (!running[id]) {
+    if (!isRunning(id)) {
       var st = $("seed-status"); st.className = "vstatus green";
       st.innerHTML = "сохранённая задача · " + (t.lastCheck ? "проверка " + fmtDT(t.lastCheck) : "не проверена") + ' · <a href="javascript:void(0)" onclick="maStart()" style="color:#3fcf72">▶ проверить снова</a>';
     }
     renderTaskList(); window.scrollTo(0, ($("form-h1") || {}).offsetTop || 0);
   };
   window.maStart = startCheck;
-  window.maStop = function (id) { updateTask(id, { status: "red" }); renderTaskList(); if (curId === id) renderShown(); };
+  window.maStop = function (id) {
+    if (SERVER) { api("/api/tasks/" + id + "/stop", { method: "POST" }).then(function () { srvFetch(id, function () { srvRefreshList(); if (curId === id) { (srvCache[id] && srvCache[id].mode === "BA") ? renderBAOpen(id) : renderShown(); } }); }); return; }
+    updateTask(id, { status: "red" }); renderTaskList(); if (curId === id) renderShown();
+  };
 
   function dueCheck() {
     onlyA(load()).forEach(function (t) {
@@ -298,17 +339,23 @@
     $("close-task").addEventListener("click", saveAndContinue);
     $("ba-close").addEventListener("click", baCollapse);
     $("ba-stop").addEventListener("click", function () { var id = this.getAttribute("data-id"); window.maStop(id); renderBAOpen(id); });
-    dedupeStore(); renderTaskList(); resumeRunning(); dueCheck();
-    // открыть конкретную задачу по ?open=id (из панели «редактировать»)
     var mq = location.search.match(/[?&]open=([0-9a-f]+)/);
-    if (mq) window.maOpen(mq[1]);
-    // приём кандидата из Режима Б: ?seed=... → автозаполнение + проверка активности
     var sq = location.search.match(/[?&]seed=([^&]+)/);
-    if (sq) {
-      ta.value = decodeURIComponent(sq[1]).replace(/\+/g, " ");
-      ta.dispatchEvent(new Event("input"));
-      if (!$("name").value) $("name").value = "Из Режима Б";
-      startCheck();
-    }
+    api("/api/account").then(function (a) {
+      SERVER = !!(a && a.user);                          // на сервере — скан 24/7; иначе браузерный fallback
+      if (SERVER) {
+        srvRefreshList(function () { if (mq) window.maOpen(mq[1]); });
+        srvPoll = setInterval(srvPollTick, 5000);
+      } else {
+        dedupeStore(); renderTaskList(); resumeRunning(); dueCheck();
+        if (mq) window.maOpen(mq[1]);
+      }
+      if (sq) {
+        ta.value = decodeURIComponent(sq[1]).replace(/\+/g, " ");
+        ta.dispatchEvent(new Event("input"));
+        if (!$("name").value) $("name").value = "Из Режима Б";
+        startCheck();
+      }
+    });
   });
 })();

@@ -201,6 +201,10 @@
     text-shadow:0 0 8px rgba(34,160,86,.5)}
   .side-head .count{font-size:13px;color:var(--muted)}
 
+  .task-filter{display:flex;gap:6px;flex-wrap:wrap;padding:10px 12px;border-bottom:1px solid var(--line);background:rgba(34,160,86,.03)}
+  .tf{font-size:10.5px;letter-spacing:1px;padding:5px 10px;border:1px solid var(--line);color:var(--muted);cursor:pointer;user-select:none;transition:.1s}
+  .tf:hover{border-color:var(--green);color:var(--green)}
+  .tf.active{border-color:var(--green);color:#04130a;background:var(--green);text-shadow:none}
   .task-list{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:11px}
   .task-list::-webkit-scrollbar{width:9px}
   .task-list::-webkit-scrollbar-track{background:#071007}
@@ -379,6 +383,12 @@
         <div class="side-head">
           <h2>&gt; АКТИВНЫЕ ЗАДАНИЯ</h2>
           <span class="count" id="task-count">[ 0 ]</span>
+        </div>
+        <div class="task-filter">
+          <span class="tf active" onclick="setTaskFilter(this,'all')">ВСЕ</span>
+          <span class="tf" onclick="setTaskFilter(this,'A')">РЕЖИМ А</span>
+          <span class="tf" onclick="setTaskFilter(this,'BA')">Б→А</span>
+          <span class="tf" onclick="setTaskFilter(this,'B')">РЕЖИМ Б</span>
         </div>
         <div class="task-list" id="task-list">
           <div class="empty-tasks">нет активных заданий<br><span>создай новое во вкладке «Новое задание»</span></div>

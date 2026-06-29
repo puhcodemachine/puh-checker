@@ -186,19 +186,29 @@
       '<div class="task-meta"><span>ЗАПУСК<span class="v">' + clock(t.started) + '</span></span>' +
       '<span style="text-align:right">В РАБОТЕ' + runSpan(t, "v") + '</span></div></div>';
   }
+  var taskFilter = "all", allTasksCache = [];
   function render(tasks) {
-    tasks = (tasks || []).filter(function (t) { return !t.deleted; });  // удалённые не показываем
-    var seen = {}; tasks = tasks.filter(function (t) { if (seen[t.id]) return false; seen[t.id] = 1; return true; });  // без дублей
+    if (tasks) allTasksCache = tasks;
+    var list0 = (allTasksCache || []).filter(function (t) { return !t.deleted; });   // удалённые не показываем
+    var seen = {}; list0 = list0.filter(function (t) { if (seen[t.id]) return false; seen[t.id] = 1; return true; });  // без дублей
+    if (taskFilter !== "all") list0 = list0.filter(function (t) { return (t.mode || "B") === taskFilter; });  // фильтр по режиму
     var list = $("task-list"), cnt = $("task-count");
-    if (cnt) cnt.textContent = "[ " + tasks.length + " ]";
-    tasks.forEach(function (t) {
-      if (t.mode !== "A" && t.status !== "green" && !t.pausedAt && !t.stopped) {  // миграция: зафиксировать время старым паузам
+    if (cnt) cnt.textContent = "[ " + list0.length + " ]";
+    list0.forEach(function (t) {
+      if (t.mode !== "A" && t.mode !== "BA" && t.status !== "green" && !t.pausedAt && !t.stopped) {  // миграция пауз
         t.pausedAt = Date.now() / 1000;
         store.update(t.id, { pausedAt: t.pausedAt });
       }
     });
-    if (list) list.innerHTML = tasks.length ? tasks.map(cardHtml).join("") : EMPTY;
+    if (list) list.innerHTML = list0.length ? list0.map(cardHtml).join("") : EMPTY;
   }
+  window.setTaskFilter = function (el, f) {
+    taskFilter = f;
+    var ch = document.getElementsByClassName("tf");
+    for (var i = 0; i < ch.length; i++) ch[i].classList.remove("active");
+    el.classList.add("active");
+    render();
+  };
   function refresh() { store.list().then(render); }
   window.refreshTasks = refresh;
   window.renderTasksDirect = render;
