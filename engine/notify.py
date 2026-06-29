@@ -17,7 +17,8 @@ def enabled():
 
 # --- цены USD (CoinGecko, кэш 10 мин) для порога масс-уведомлений ---
 _PRICES = {"t": 0.0, "p": {}}
-_CG = {"bitcoin": "BTC", "ethereum": "ETH", "litecoin": "LTC", "dogecoin": "DOGE", "dash": "DASH", "ethereum-classic": "ETC"}
+_CG = {"bitcoin": "BTC", "ethereum": "ETH", "litecoin": "LTC", "dogecoin": "DOGE", "dash": "DASH",
+       "ethereum-classic": "ETC", "binancecoin": "BNB", "polygon-ecosystem-token": "MATIC"}
 
 def prices():
     now = time.time()
@@ -34,11 +35,21 @@ def prices():
         pass
     return _PRICES["p"]
 
-def usd(coin, bal):                       # USD-оценка баланса (EVM считаем по ETH — грубо, но не пропустим)
+def usd(coin, bal):                       # USD-оценка простого баланса (BTC/LTC/DOGE/DASH/ETC)
     try:
         return float(bal) * (prices().get(coin, 0) or 0)
     except Exception:
         return 0.0
+
+def row_usd(row):                         # корректная оценка строки результата
+    ev = row.get("evm")                   # EVM: каждая сеть — свой токен (ETH/BNB/MATIC), НЕ суммой
+    if ev:
+        p = prices()
+        try:
+            return sum((bal or 0) * (p.get(sym, 0) or 0) for sym, bal in ev.items())
+        except Exception:
+            return 0.0
+    return usd(row.get("coin"), row.get("bal"))
 
 def _esc(s):
     return (str(s)).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")

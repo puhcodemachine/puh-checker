@@ -41,6 +41,13 @@ if [ -d ../mass ]; then
   cp ../mass/index.html docs/mass/index.html
 fi
 
+# --- Статистика (../stats) ---
+if [ -d ../stats ]; then
+  mkdir -p docs/stats/static
+  cp ../stats/static/*.js docs/stats/static/
+  cp ../stats/index.html docs/stats/index.html
+fi
+
 # --- барьер в обе страницы ---
 GATE_HASH="$(cat .gate_hash 2>/dev/null || echo '')"
 GATE_HASH="$GATE_HASH" /root/PUH/.venv/bin/python - <<'PY'

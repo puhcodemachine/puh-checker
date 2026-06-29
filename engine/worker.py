@@ -33,9 +33,12 @@ SLOW_CHAINS = ("dogecoin", "dash")     # DOGE/DASH — отдельная мед
 
 
 def _result(row, a):
-    return {"coin": row["coin"], "std": row["std"], "path": row["path"], "addr": row["addr"],
-            "bal": a["bal"], "received": a.get("received", "—"), "txn": a.get("txn", 0),
-            "alive": a["alive"], "chains": a.get("chains", "")}
+    r = {"coin": row["coin"], "std": row["std"], "path": row["path"], "addr": row["addr"],
+         "bal": a["bal"], "received": a.get("received", "—"), "txn": a.get("txn", 0),
+         "alive": a["alive"], "chains": a.get("chains", "")}
+    if a.get("evm"):
+        r["evm"] = a["evm"]                         # {токен: баланс} по сетям — для корректной оценки в $
+    return r
 
 
 def scan_seed(seed, ctrl=None, addr_workers=4, on_progress=None):

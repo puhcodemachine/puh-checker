@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ПУХ · СТАТИСТИКА</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#050805;--panel:#0a110b;--green:#32c266;--green-dim:#1a6a35;--amber:#e8b73a;--red:#e85a5a;--txt:#6fbe87;--muted:#386b49;--line:#143f24}
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{background:var(--bg);color:var(--txt);font-family:'Share Tech Mono',ui-monospace,monospace;overflow-y:auto}
+  body::before{content:"";position:fixed;inset:0;z-index:9;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(0,0,0,.18) 0,rgba(0,0,0,.18) 1px,transparent 2px,transparent 3px);mix-blend-mode:multiply}
+  .topbar{position:relative;z-index:1;display:flex;justify-content:space-between;align-items:center;padding:13px 20px;border-bottom:1px solid var(--green-dim)}
+  .topbar a{color:var(--muted);font-size:12px;text-decoration:none;border:1px solid var(--line);padding:7px 12px}
+  .topbar a:hover{border-color:var(--green);color:var(--green)}
+  .brand{display:flex;align-items:center;gap:10px}
+  .emblem{width:30px;height:30px;display:grid;place-items:center;border-radius:6px;background:linear-gradient(135deg,var(--green),#179a50);color:#04130a;font-weight:800;font-size:16px}
+  .brand b{font-size:15px;letter-spacing:1.5px;color:var(--green)}
+  .brand span{display:block;font-size:10px;color:var(--muted);letter-spacing:2px}
+  .wrap{position:relative;z-index:1;max-width:1080px;margin:0 auto;padding:22px}
+  h1{font-size:16px;letter-spacing:1.5px;color:var(--green);margin:0 0 4px}
+  .lead{color:var(--muted);font-size:12.5px;margin:0 0 18px;line-height:1.55}
+  .sect{font-size:13px;color:var(--green);letter-spacing:1px;margin:26px 0 10px;border-bottom:1px solid var(--line);padding-bottom:6px}
+  .stats{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 4px}
+  .stat{flex:1;min-width:150px;border:1px solid var(--line);background:var(--panel);padding:12px 14px}
+  .stat .n{font-size:24px;color:var(--green);letter-spacing:1px}
+  .stat .l{font-size:10px;color:var(--muted);letter-spacing:1px;margin-top:3px}
+  .stat.alive .n{color:#3fcf72}.stat.usd .n{color:var(--amber)}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th,td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-weight:400;font-size:11px;letter-spacing:.5px;text-transform:uppercase}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  tr:hover td{background:rgba(34,160,86,.05)}
+  .bar{position:relative;height:14px;background:#0c1a0e;border:1px solid var(--line);min-width:90px}
+  .bar>i{display:block;height:100%;background:linear-gradient(90deg,var(--green-dim),var(--green))}
+  .bar>span{position:absolute;inset:0;font-size:10px;color:var(--txt);display:flex;align-items:center;justify-content:center;letter-spacing:.5px}
+  .coin{color:var(--green)}.std{color:var(--txt)}.muted{color:var(--muted)}.amber{color:var(--amber)}
+  .addr{font-size:11px;color:var(--muted);word-break:break-all}
+  .addr a{color:var(--muted);text-decoration:none}.addr a:hover{color:var(--green)}
+  .empty{color:var(--muted);font-size:12.5px;padding:18px;border:1px dashed var(--line);text-align:center}
+  .refresh{background:rgba(34,160,86,.1);border:1px solid var(--green);color:var(--green);padding:7px 14px;font-family:inherit;font-size:12px;cursor:pointer;letter-spacing:.5px}
+  .refresh:hover{filter:brightness(1.15)}
+  .upd{color:var(--muted);font-size:11px;margin-left:10px}
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand"><div class="emblem">П</div><div><b>ПУХ · СТАТИСТИКА</b><span>аналитика по всем сканам</span></div></div>
+    <a href="../">← к панели</a>
+  </div>
+
+  <div class="wrap">
+    <h1>&gt; СТАТИСТИКА ПРОВЕРОК</h1>
+    <p class="lead">Сводка по всем задачам: какие пути деривации чаще «живые», разбивка по монетам и сетям, общий найденный баланс в $ и топ находок.
+      <button class="refresh" id="refresh">↻ ОБНОВИТЬ</button><span class="upd" id="upd"></span></p>
+
+    <div class="stats" id="cards"></div>
+
+    <div class="sect">&gt; ПУТИ ПО ЖИВОСТИ <span class="muted" style="font-size:11px">(где чаще встречается активность)</span></div>
+    <div id="paths"></div>
+
+    <div class="sect">&gt; ПО МОНЕТАМ</div>
+    <div id="coins"></div>
+
+    <div class="sect">&gt; EVM-СЕТИ</div>
+    <div id="chains"></div>
+
+    <div class="sect">&gt; ТОП НАХОДОК <span class="muted" style="font-size:11px">(по сумме в $)</span></div>
+    <div id="top"></div>
+  </div>
+
+  <script src="static/stats.js"></script>
+</body>
+</html>

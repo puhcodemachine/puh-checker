@@ -39,7 +39,7 @@ SECURE_COOKIE = bool(os.environ.get("PUH_HTTPS"))  # на проде с HTTPS: P
 MAX_BODY = 2_000_000                             # лимит тела запроса (анти-DoS)
 MAX_LOGIN_FAILS = 8                              # блок после N неудач за окно
 LOGIN_WINDOW = 600                               # окно блокировки, сек
-SUBAPPS = ("mode-a", "mode-b", "mass")           # отдельные страницы (под авторизацией)
+SUBAPPS = ("mode-a", "mode-b", "mass", "stats")  # отдельные страницы (под авторизацией)
 CTYPES = {".js": "application/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
           ".html": "text/html; charset=utf-8", ".json": "application/json; charset=utf-8",
           ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon",
@@ -135,6 +135,56 @@ def task_summary(t):
             "results": len(t.get("results", [])), "owner": t.get("owner")}
 
 
+def _stats(user, adm):
+    """Агрегат по всем задачам пользователя: живость путей, монеты, общий баланс $, топ находок."""
+    tasks = [t for t in load_tasks() if not t.get("deleted") and (adm or t.get("owner") == user)]
+    by_path, by_coin, chains, top = {}, {}, {}, []
+    total_usd = [0.0]
+    cnt = {"scanned": 0, "alive": 0}
+    tk = {"A": 0, "BA": 0, "mass": 0, "alive_tasks": 0}
+
+    def consume(rows):
+        for r in rows or []:
+            if r.get("bal") in ("…очередь", "н/д", None):
+                continue
+            coin, std = r.get("coin", "?"), r.get("std", "?")
+            bp = by_path.setdefault((coin, std), {"coin": coin, "std": std, "scanned": 0, "alive": 0, "usd": 0.0})
+            bc = by_coin.setdefault(coin, {"coin": coin, "scanned": 0, "alive": 0, "usd": 0.0})
+            bp["scanned"] += 1; bc["scanned"] += 1; cnt["scanned"] += 1
+            if r.get("alive"):
+                u = NOTIFY.row_usd(r) if NOTIFY else 0.0
+                bp["alive"] += 1; bc["alive"] += 1; cnt["alive"] += 1
+                bp["usd"] += u; bc["usd"] += u; total_usd[0] += u
+                for ch in (r.get("chains") or "").split(","):
+                    ch = ch.strip()
+                    if ch:
+                        chains[ch] = chains.get(ch, 0) + 1
+                top.append({"coin": coin, "std": std, "path": r.get("path"), "addr": r.get("addr"),
+                            "bal": r.get("bal"), "usd": round(u, 2)})
+
+    for t in tasks:
+        if t.get("mass"): tk["mass"] += 1
+        elif t.get("mode") == "A": tk["A"] += 1
+        elif t.get("mode") == "BA": tk["BA"] += 1
+        if (t.get("alive") or 0) > 0: tk["alive_tasks"] += 1
+        if t.get("mode") == "BA":
+            for c in t.get("candidates", []) or []:
+                consume(c.get("results"))
+        else:
+            consume(t.get("results"))
+
+    def fin(d):
+        d["rate"] = round(d["alive"] / d["scanned"], 4) if d["scanned"] else 0.0
+        d["usd"] = round(d["usd"], 2); return d
+    paths = sorted((fin(p) for p in by_path.values()), key=lambda x: (x["alive"], x["rate"], x["scanned"]), reverse=True)
+    coins = sorted((fin(c) for c in by_coin.values()), key=lambda x: (x["alive"], x["usd"]), reverse=True)
+    top.sort(key=lambda x: x["usd"], reverse=True)
+    return {"tasks": dict(tk, total=len(tasks)), "addresses": cnt, "total_usd": round(total_usd[0], 2),
+            "by_path": paths, "by_coin": coins,
+            "chains": [{"chain": k, "alive": v} for k, v in sorted(chains.items(), key=lambda x: -x[1])],
+            "top": top[:30]}
+
+
 def verify(user, pw):
     u = load_auth()["users"].get(user or "")
     if not u:
@@ -172,16 +222,24 @@ def _changes(prev, new):
     return out
 
 
-MASS_MIN_USD = float(os.environ.get("PUH_MASS_MIN_USD", "200"))   # масс: уведомлять только при балансе ≥ $200
+# Масс-пороги: стандартный путь (его кошелёк показывает сам) — от $200; нестандартные (скрытые остатки) — от $10.
+MASS_STD_MIN_USD = float(os.environ.get("PUH_MASS_STD_MIN_USD", "200"))
+MASS_OTHER_MIN_USD = float(os.environ.get("PUH_MASS_OTHER_MIN_USD", "10"))
+STD_PATHS = ("Standard (MetaMask)", "Ledger Live")        # стандартный ETH-путь MetaMask/Ledger Live
 
 
 def _notify_changes(task, seed, prev, new, mode_label):
-    """Режим А — ИЗМЕНЕНИЕ в пути; Режим Б→А — НАЙДЕНО; МАСС — только баланс ≥ $200 (забытые остатки)."""
+    """Режим А — ИЗМЕНЕНИЕ в пути; Б→А — НАЙДЕНО; МАСС — стандартный путь от $200, остальные от $10."""
     if not NOTIFY or not NOTIFY.enabled():
         return
     rows = _changes(prev, new)
-    if task.get("mass"):                                   # масс — только значимые балансы
-        rows = [r for r in rows if NOTIFY.usd(r.get("coin"), r.get("bal")) >= MASS_MIN_USD]
+    if task.get("mass"):
+        kept = []
+        for r in rows:
+            thr = MASS_STD_MIN_USD if r.get("std") in STD_PATHS else MASS_OTHER_MIN_USD
+            if NOTIFY.row_usd(r) >= thr:
+                kept.append(r)
+        rows = kept
     if not rows:
         return
     title = "НАЙДЕНО" if not prev else "ИЗМЕНЕНИЕ"
@@ -515,6 +573,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if not user:
                 return self._json({"error": "auth"}, 401)
             return self._json({"user": user, "role": user_role(user)})
+        if path == "/api/stats":
+            user = self._user()
+            if not user:
+                return self._json({"error": "auth"}, 401)
+            return self._json(_stats(user, user_role(user) == "admin"))
         if path == "/api/admin/users":
             user = self._user()
             if not user:

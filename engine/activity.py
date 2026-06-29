@@ -103,15 +103,22 @@ def _rpc(rpcs, key, method, params):
     d = _post(_rot(key, rpcs), {"jsonrpc": "2.0", "id": 1, "method": method, "params": params})
     return (d or {}).get("result")
 
+EVM_TOKEN = {"ETH": "ETH", "BSC": "BNB", "Polygon": "MATIC"}    # нативный токен каждой сети (разные деньги!)
+
 def evm_all(addr):
-    alive, chains, wei, nonce = False, [], 0, 0
+    alive, chains, nonce, per = False, [], 0, {}               # per: токен -> баланс (НЕ суммируем разные монеты)
     for name, rpcs in EVM.items():
         b = _rpc(rpcs, "evm_" + name, "eth_getBalance", [addr, "latest"])
         n = _rpc(rpcs, "evm_" + name, "eth_getTransactionCount", [addr, "latest"])
         w = int(b, 16) if b else 0; nc = int(n, 16) if n else 0
-        if w > 0 or nc > 0: alive = True; chains.append(name)
-        wei += w; nonce += nc
-    return {"bal": f"{wei/1e18:.6f}", "received": "—", "txn": nonce, "alive": alive, "chains": ", ".join(chains)}
+        if w > 0 or nc > 0:
+            alive = True
+            if name not in chains: chains.append(name)
+        if w > 0: per[EVM_TOKEN[name]] = per.get(EVM_TOKEN[name], 0) + w / 1e18
+        nonce += nc
+    disp = " · ".join(f"{v:.6f} {sym}" for sym, v in per.items()) if per else "0"
+    return {"bal": disp, "received": "—", "txn": nonce, "alive": alive,
+            "chains": ", ".join(chains), "evm": per}
 
 def etc_one(addr):
     b = _rpc(ETC_RPCS, "etc", "eth_getBalance", [addr, "latest"])
