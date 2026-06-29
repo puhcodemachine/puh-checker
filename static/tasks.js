@@ -152,13 +152,15 @@
     var f = t.stopped || t.pausedAt;
     return '<span class="' + cls + ' t-run">' + (f ? dur(f - t.started) : "--:--:--") + "</span>";
   }
+  function hasTrace(t) { return (t.alive || 0) > 0 || (t.hits || 0) > 0; }   // найдены следы активности
+  function traceLamp(t) { return hasTrace(t) ? '<span class="lamp trace" title="найдены следы"></span>' : ""; }
   function cardHtmlA(t) {
     var run = t.status === "running", alive = t.alive || 0;
     var lamp = run ? "green" : t.status === "red" ? "red" : (alive ? "green" : "amber");
     var cls = run ? "green" : t.status === "red" ? "red" : (alive ? "green" : "amber");
     var st = run ? "● идёт проверка " + (t.progress || "") : t.status === "red" ? "■ остановлено" : (alive ? "● ЖИВАЯ · активных " + alive : "проверено · пусто");
-    return '<div class="task" data-id="' + t.id + '" onclick="openTask(\'' + t.id + '\')">' +
-      '<div class="task-top"><span class="task-name">' + esc(t.name) + ' <span class="mode-badge a">А</span></span><span class="lamp ' + lamp + '"></span></div>' +
+    return '<div class="task' + (hasTrace(t) ? " hastrace" : "") + '" data-id="' + t.id + '" onclick="openTask(\'' + t.id + '\')">' +
+      '<div class="task-top"><span class="task-name">' + esc(t.name) + ' <span class="mode-badge a">А</span></span>' + traceLamp(t) + '<span class="lamp ' + lamp + '"></span></div>' +
       '<div class="task-status ' + cls + '">' + st + '</div>' +
       '<div class="task-type">тип: ' + esc(t.type || "проверка активности") + '</div>' +
       '<div class="task-meta"><span>ЗАПУСК<span class="v">' + clock(t.started) + '</span></span>' +
@@ -168,8 +170,8 @@
     var run = t.status === "running", hits = t.hits || 0;
     var lamp = run ? "green" : t.status === "red" ? "red" : (hits ? "green" : "amber");
     var st = run ? "● проверка вариаций " + (t.progress || "") : t.status === "red" ? "■ остановлено" : (hits ? "● ЖИВЫХ ВАРИАЦИЙ: " + hits : "проверено · пусто");
-    return '<div class="task" data-id="' + t.id + '" onclick="openTask(\'' + t.id + '\')">' +
-      '<div class="task-top"><span class="task-name">' + esc(t.name) + ' <span class="mode-badge ba">Б→А</span></span><span class="lamp ' + lamp + '"></span></div>' +
+    return '<div class="task' + (hasTrace(t) ? " hastrace" : "") + '" data-id="' + t.id + '" onclick="openTask(\'' + t.id + '\')">' +
+      '<div class="task-top"><span class="task-name">' + esc(t.name) + ' <span class="mode-badge ba">Б→А</span></span>' + traceLamp(t) + '<span class="lamp ' + lamp + '"></span></div>' +
       '<div class="task-status ' + lamp + '">' + st + '</div>' +
       '<div class="task-type">тип: ' + esc(t.type || ("Б→А · вариаций " + (t.candidates || 0))) + '</div>' +
       '<div class="task-meta"><span>ЗАПУСК<span class="v">' + clock(t.started) + '</span></span>' +
@@ -179,8 +181,8 @@
     if (t.mode === "A") return cardHtmlA(t);
     if (t.mode === "BA") return cardHtmlBA(t);
     var si = statusInfo(t.status);
-    return '<div class="task" data-id="' + t.id + '" onclick="openTask(\'' + t.id + '\')">' +
-      '<div class="task-top"><span class="task-name">' + esc(t.name) + ' <span class="mode-badge">Б</span></span><span class="lamp ' + si.lamp + '"></span></div>' +
+    return '<div class="task' + (hasTrace(t) ? " hastrace" : "") + '" data-id="' + t.id + '" onclick="openTask(\'' + t.id + '\')">' +
+      '<div class="task-top"><span class="task-name">' + esc(t.name) + ' <span class="mode-badge">Б</span></span>' + traceLamp(t) + '<span class="lamp ' + si.lamp + '"></span></div>' +
       '<div class="task-status ' + si.cls + '">' + si.txt + '</div>' +
       '<div class="task-type">тип: ' + esc(t.type) + '</div>' +
       '<div class="task-meta"><span>ЗАПУСК<span class="v">' + clock(t.started) + '</span></span>' +
@@ -191,7 +193,8 @@
     if (tasks) allTasksCache = tasks;
     var list0 = (allTasksCache || []).filter(function (t) { return !t.deleted; });   // удалённые не показываем
     var seen = {}; list0 = list0.filter(function (t) { if (seen[t.id]) return false; seen[t.id] = 1; return true; });  // без дублей
-    if (taskFilter !== "all") list0 = list0.filter(function (t) { return (t.mode || "B") === taskFilter; });  // фильтр по режиму
+    if (taskFilter === "traces") list0 = list0.filter(hasTrace);  // только задачи со следами
+    else if (taskFilter !== "all") list0 = list0.filter(function (t) { return (t.mode || "B") === taskFilter; });  // фильтр по режиму
     var list = $("task-list"), cnt = $("task-count");
     if (cnt) cnt.textContent = "[ " + list0.length + " ]";
     list0.forEach(function (t) {

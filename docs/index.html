@@ -229,6 +229,11 @@
   .lamp.green{background:#3fcf72;box-shadow:0 0 10px 2px rgba(40,170,92,.8);animation:pulse 1.6s infinite}
   .lamp.amber{background:#ffd23f;box-shadow:0 0 10px 2px rgba(255,210,63,.8);animation:pulse 1s infinite}
   .lamp.red{background:#ff4d4d;box-shadow:0 0 10px 2px rgba(255,77,77,.8)}
+  .lamp.trace{background:#ffcc33;box-shadow:0 0 13px 3px rgba(255,204,51,.95);animation:pulse .8s infinite}
+  .task.hastrace{border-color:#ffcc33;box-shadow:0 0 14px rgba(255,204,51,.28)}
+  .task.hastrace .task-name{color:#ffcc33}
+  .tf-trace{color:#ffcc33;border-color:#7a5a12}
+  .tf-trace.active{background:#ffcc33 !important;color:#1a1205 !important;border-color:#ffcc33 !important}
   @keyframes pulse{50%{opacity:.45}}
 
   .task-status{font-size:12px;margin:7px 0 9px;letter-spacing:1px}
@@ -389,6 +394,7 @@
         </div>
         <div class="task-filter">
           <span class="tf active" onclick="setTaskFilter(this,'all')">ВСЕ</span>
+          <span class="tf tf-trace" onclick="setTaskFilter(this,'traces')">● СЛЕДЫ</span>
           <span class="tf" onclick="setTaskFilter(this,'A')">РЕЖИМ А</span>
           <span class="tf" onclick="setTaskFilter(this,'BA')">Б→А</span>
           <span class="tf" onclick="setTaskFilter(this,'B')">РЕЖИМ Б</span>
