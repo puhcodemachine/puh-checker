@@ -8,6 +8,8 @@
   function nowSec() { return Date.now() / 1000; }
   function fmtDT(ts) { var d = new Date(ts * 1000); return pad(d.getDate()) + "." + pad(d.getMonth() + 1) + " " + pad(d.getHours()) + ":" + pad(d.getMinutes()); }
   var LS = "puh_tasks", curId = null, lastCands = null;
+  var SERVER = false, srvBA = [], srvPoll = null;           // серверный режим: показываем активные Б→А (скан 24/7)
+  function api(p, opts) { return fetch(p, Object.assign({ credentials: "same-origin", headers: { "Content-Type": "application/json" } }, opts || {})).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }); }
   function load() { try { return JSON.parse(localStorage.getItem(LS)) || []; } catch (e) { return []; } }
   function save(a) { try { localStorage.setItem(LS, JSON.stringify(a)); } catch (e) {} }
   function onlyB(a) { return (a || []).filter(function (t) { return t.mode === "B" && !t.deleted; }); }
@@ -123,7 +125,19 @@
   }
 
   function renderTaskList() {
-    var tasks = onlyB(load()), wrap = $("tasks-wrap"), el = $("task-list");
+    var wrap = $("tasks-wrap"), el = $("task-list");
+    if (SERVER) {                                            // серверная панель: активные Б→А (скан 24/7)
+      if (!srvBA.length) { wrap.classList.add("hidden"); return; }
+      wrap.classList.remove("hidden");
+      el.innerHTML = srvBA.map(function (t) {
+        var col = t.status === "running" ? "#32c266" : (t.status === "amber" ? "#e0b341" : "#c0392b");
+        var meta = "восстановление · " + (t.progress || "") + (t.hits ? " · найдено: " + t.hits : "");
+        return '<div class="b-task" onclick="bOpenSrv(\'' + t.id + '\')"><span style="color:' + col + '">●</span> <span class="b-name">' + esc(t.name) + "</span>" +
+          '<span class="b-meta">' + meta + "</span><span>→</span></div>";
+      }).join("");
+      return;
+    }
+    var tasks = onlyB(load());
     if (!tasks.length) { wrap.classList.add("hidden"); return; }
     wrap.classList.remove("hidden");
     el.innerHTML = tasks.map(function (t) {
@@ -131,6 +145,14 @@
         '<span class="b-meta">правок: ' + (t.results || []).length + " · " + fmtDT(t.lastCheck || t.created) + "</span><span>→</span></div>";
     }).join("");
   }
+  function srvRefreshList() {
+    api("/api/tasks").then(function (d) {
+      srvBA = ((d && d.tasks) || []).filter(function (t) { return t.mode === "BA" && !t.deleted && !t.mass; })
+        .sort(function (a, b) { return (b.created || 0) - (a.created || 0); });
+      renderTaskList();
+    });
+  }
+  window.bOpenSrv = function (id) { location.href = "../mode-a/?open=" + id; };   // детали Б→А — в Режиме А
   window.bOpen = function (id) {
     var t = load().filter(function (x) { return x.id === id; })[0]; if (!t) return;
     curId = id; $("name").value = t.name; $("words").value = t.words || ""; $("nums").value = t.nums || "";
@@ -160,6 +182,10 @@
     $("run").addEventListener("click", run);
     $("save").addEventListener("click", saveTask);
     $("toA").addEventListener("click", toModeA);
-    renderTaskList();
+    api("/api/account").then(function (a) {                  // на сервере — живая панель Б→А; иначе локальные сохранения
+      SERVER = !!(a && a.user);
+      if (SERVER) { srvRefreshList(); srvPoll = setInterval(srvRefreshList, 6000); }
+      else renderTaskList();
+    });
   });
 })();

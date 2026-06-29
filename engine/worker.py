@@ -6,8 +6,8 @@ import derive, activity
 from concurrent.futures import ThreadPoolExecutor
 
 class Ctrl:                                   # AIMD контроллер потоков (для масс-очереди)
-    def __init__(self, mn=1, mx=5): self.mn, self.mx, self.target, self.cool, self.ok = mn, mx, 2, 0, 0
-    def max_by_load(self, rem): return 5 if rem >= 200 else 4 if rem >= 50 else 3 if rem >= 15 else 2 if rem >= 5 else 1
+    def __init__(self, mn=2, mx=6): self.mn, self.mx, self.target, self.cool, self.ok = mn, mx, 3, 0, 0
+    def max_by_load(self, rem): return 6 if rem >= 200 else 5 if rem >= 50 else 4 if rem >= 15 else 3 if rem >= 4 else 2
     def report(self, ok, limited):
         now = time.time()
         if limited: self.target = max(self.mn, self.target - 1); self.cool = now + 8; self.ok = 0
@@ -29,23 +29,39 @@ def check_retry(row, ctrl, tries=4):
             if n < tries: time.sleep(0.3 * n)
     return {"bal": "н/д", "received": "—", "txn": 0, "alive": False, "chains": ""}
 
+SLOW_CHAINS = ("dogecoin", "dash")     # DOGE/DASH — отдельная медленная очередь (никогда не убираем)
+
+
+def _result(row, a):
+    return {"coin": row["coin"], "std": row["std"], "path": row["path"], "addr": row["addr"],
+            "bal": a["bal"], "received": a.get("received", "—"), "txn": a.get("txn", 0),
+            "alive": a["alive"], "chains": a.get("chains", "")}
+
+
 def scan_seed(seed, ctrl=None, addr_workers=4, on_progress=None):
+    """Быстрые сети (BTC/LTC/EVM/ETC) — сразу; DOGE/DASH возвращаем отдельно (slow_rows) для фоновой очереди."""
     ctrl = ctrl or Ctrl()
     rows = derive.derive_all(seed)
+    fast = [r for r in rows if r["chain"] not in SLOW_CHAINS]
+    slow = [r for r in rows if r["chain"] in SLOW_CHAINS]
     total = len(rows); done = [0]; plock = threading.Lock()
     def one(row):
         a = check_retry(row, ctrl)
         if on_progress:
             with plock:
                 done[0] += 1
-                on_progress(done[0], total)        # живой прогресс X/43
-        return {"coin": row["coin"], "std": row["std"], "path": row["path"], "addr": row["addr"],
-                "bal": a["bal"], "received": a.get("received", "—"), "txn": a.get("txn", 0),
-                "alive": a["alive"], "chains": a.get("chains", "")}
+                on_progress(done[0], total)
+        return _result(row, a)
     with ThreadPoolExecutor(max_workers=addr_workers) as ex:
-        results = list(ex.map(one, rows))
-    alive = sum(1 for r in results if r["alive"])
-    return {"results": results, "alive": alive}
+        fast_results = list(ex.map(one, fast))
+    placeholders = [{"coin": r["coin"], "std": r["std"], "path": r["path"], "addr": r["addr"],
+                     "bal": "…очередь", "received": "—", "txn": 0, "alive": False, "chains": ""} for r in slow]
+    alive = sum(1 for r in fast_results if r["alive"])
+    return {"results": fast_results + placeholders, "alive": alive, "total": total, "slow_rows": slow}
+
+
+def check_one(row):                    # одна DOGE/DASH-проверка для фоновой очереди (blockchair сам троттлит)
+    return _result(row, activity.check(row))
 
 if __name__ == "__main__":
     seed = sys.argv[1] if len(sys.argv) > 1 else "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"

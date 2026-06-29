@@ -1,6 +1,6 @@
 # Серверная деривация адресов по всем путям (зеркало клиентского paths.js) через bip_utils.
-from bip_utils import (Bip39SeedGenerator, Bip44, Bip49, Bip84,
-                       Bip44Coins, Bip49Coins, Bip84Coins, Bip44Changes)
+from bip_utils import (Bip39SeedGenerator, Bip44, Bip49, Bip84, Bip86,
+                       Bip44Coins, Bip49Coins, Bip84Coins, Bip86Coins, Bip44Changes)
 
 def derive_all(mnemonic):
     seed = Bip39SeedGenerator(mnemonic).Generate()
@@ -11,6 +11,7 @@ def derive_all(mnemonic):
     for i in range(5): acc(Bip44, Bip44Coins.BITCOIN, "Legacy BIP44", "BTC", "bitcoin", f"m/44'/0'/0'/0/{i}", 0, i)
     for i in range(5): acc(Bip49, Bip49Coins.BITCOIN, "P2SH-SegWit BIP49", "BTC", "bitcoin", f"m/49'/0'/0'/0/{i}", 0, i)
     for i in range(5): acc(Bip84, Bip84Coins.BITCOIN, "SegWit BIP84", "BTC", "bitcoin", f"m/84'/0'/0'/0/{i}", 0, i)
+    for i in range(5): acc(Bip86, Bip86Coins.BITCOIN, "Taproot BIP86", "BTC", "bitcoin", f"m/86'/0'/0'/0/{i}", 0, i)
     for i in range(3): acc(Bip44, Bip44Coins.LITECOIN, "Legacy BIP44", "LTC", "litecoin", f"m/44'/2'/0'/0/{i}", 0, i)
     for i in range(3): acc(Bip49, Bip49Coins.LITECOIN, "P2SH-SegWit BIP49", "LTC", "litecoin", f"m/49'/2'/0'/0/{i}", 0, i)
     for i in range(3): acc(Bip84, Bip84Coins.LITECOIN, "SegWit BIP84", "LTC", "litecoin", f"m/84'/2'/0'/0/{i}", 0, i)

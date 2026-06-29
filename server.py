@@ -12,6 +12,7 @@ import http.server
 import json
 import os
 import posixpath
+import queue
 import re
 import secrets
 import sys
@@ -191,6 +192,42 @@ def _notify_changes(task, seed, prev, new, mode_label):
 
 BUSY = set()
 BUSY_LOCK = threading.Lock()
+SLOW_Q = queue.Queue()          # очередь DOGE/DASH (фон, не блокирует быстрые сети)
+SLOW_PENDING = set()            # id задач, у которых DOGE/DASH ещё в очереди
+
+
+def _slow_worker():
+    while True:
+        item = SLOW_Q.get()
+        try:
+            tid, slow_rows = item
+            cur = _get_task(tid)
+            if not cur or cur.get("deleted") or cur.get("status") == "red":
+                continue
+            prev = cur.get("results") or []
+            checked = [SCAN.check_one(r) for r in slow_rows]      # DOGE/DASH (blockchair сам троттлит)
+            cmap = {(c["coin"], c["path"]): c for c in checked}
+            with LOCK:
+                tasks = load_tasks()
+                for x in tasks:
+                    if x["id"] == tid:
+                        for r in x.get("results", []):
+                            k = (r.get("coin"), r.get("path"))
+                            if k in cmap:
+                                r.update(cmap[k])
+                        x["alive"] = sum(1 for r in x.get("results", []) if r.get("alive"))
+                        x["progress"] = f"{len(x.get('results', []))}/{len(x.get('results', []))}"
+                        x["status"] = "amber" if x["alive"] else "green"
+                        x["scan_done"] = True
+                        x["lastCheck"] = time.time()
+                save_tasks(tasks)
+            newfull = (_get_task(tid) or {}).get("results") or []
+            _notify_changes(cur, cur.get("seed", ""), prev, newfull, "МАСС" if cur.get("mass") else "Режим А")
+        except Exception as e:
+            print("[slow] ", e, flush=True)
+        finally:
+            SLOW_PENDING.discard(item[0] if item else None)
+            SLOW_Q.task_done()
 
 
 def _claim(tid):
@@ -214,43 +251,64 @@ def _get_task(tid):
     return next((x for x in load_tasks() if x["id"] == tid), None)
 
 
+def _clean_seed(s):
+    """Чистим сид из таблицы: режем приклеенные адреса (...:0x..:0x..), оставляем только слова мнемоники."""
+    s = (s or "").strip().lower()
+    s = s.split(":")[0].split("\t")[0].split(",")[0]   # адрес/доп.поля после разделителя — прочь
+    s = re.sub(r"[^a-z\s]", " ", s)                     # мнемоника — только буквы a-z
+    return " ".join(s.split())
+
+
 def _scan_task(tid):
     try:
         t = _get_task(tid)
         if not t or not SCAN:
             return
         if t.get("mode") == "BA":
+            # Один кандидат за заход → слот освобождается, масс/A идут параллельно между кандидатами
             cands = t.get("candidates") or []
-            for i, c in enumerate(cands):
-                cur = _get_task(tid)
-                if not cur or cur.get("status") == "red" or cur.get("deleted"):
-                    return
-                out = SCAN.scan_seed(c.get("phrase", ""), SCAN_CTRL)
-                with LOCK:
-                    tasks = load_tasks()
-                    for x in tasks:
-                        if x["id"] == tid and i < len(x.get("candidates", [])):
-                            x["candidates"][i]["results"] = out["results"]
-                            x["candidates"][i]["alive"] = out["alive"]
-                            x["candidates"][i]["done"] = True
-                            done = sum(1 for cc in x["candidates"] if cc.get("done"))
-                            x["hits"] = sum(1 for cc in x["candidates"] if (cc.get("alive") or 0) > 0)
-                            x["alive"] = sum(cc.get("alive", 0) for cc in x["candidates"])
-                            x["progress"] = f"{done}/{len(x['candidates'])}"
-                    save_tasks(tasks)
-                _notify_changes(cur, c.get("phrase", ""), (c.get("results") or []), out["results"], "Б→А")
-            t2 = _get_task(tid) or {}
-            patch_task(tid, {"status": "amber" if t2.get("hits") else "green",
-                             "lastCheck": time.time(), "scan_done": True})
-        else:                       # mode A (в т.ч. масс — одна сид = одна задача)
+            idx = next((i for i, c in enumerate(cands) if not c.get("done")), None)
+            if idx is None:
+                patch_task(tid, {"status": "amber" if t.get("hits") else "green",
+                                 "lastCheck": time.time(), "scan_done": True})
+                return
+            c = cands[idx]
+            out = SCAN.scan_seed(c.get("phrase", ""), SCAN_CTRL)
+            with LOCK:
+                tasks = load_tasks()
+                for x in tasks:
+                    if x["id"] == tid and idx < len(x.get("candidates", [])):
+                        x["candidates"][idx]["results"] = out["results"]
+                        x["candidates"][idx]["alive"] = out["alive"]
+                        x["candidates"][idx]["done"] = True
+                        done = sum(1 for cc in x["candidates"] if cc.get("done"))
+                        x["hits"] = sum(1 for cc in x["candidates"] if (cc.get("alive") or 0) > 0)
+                        x["alive"] = sum(cc.get("alive", 0) for cc in x["candidates"])
+                        x["progress"] = f"{done}/{len(x['candidates'])}"
+                        if done >= len(x["candidates"]):       # все кандидаты пройдены
+                            x["status"] = "amber" if x["hits"] else "green"
+                            x["lastCheck"] = time.time(); x["scan_done"] = True
+                save_tasks(tasks)
+            _notify_changes(t, c.get("phrase", ""), (c.get("results") or []), out["results"], "Б→А")
+            return                                             # остальные кандидаты — следующими заходами воркера
+        else:                       # mode A: быстрые сети сразу, DOGE/DASH — в фоновую очередь
             prev = t.get("results") or []
             out = SCAN.scan_seed(t.get("seed", ""), SCAN_CTRL,
                                  on_progress=lambda dn, tt: LIVE_PROGRESS.__setitem__(tid, f"{dn}/{tt}"))
-            patch_task(tid, {"results": out["results"], "alive": out["alive"],
-                             "status": "amber" if out["alive"] else "green",
-                             "lastCheck": time.time(), "scan_done": True,
-                             "progress": f"{len(out['results'])}/{len(out['results'])}"})
-            _notify_changes(t, t.get("seed", ""), prev, out["results"], "МАСС" if t.get("mass") else "Режим А")
+            fast_done = out["total"] - len(out["slow_rows"])
+            lbl = "МАСС" if t.get("mass") else "Режим А"
+            if out["slow_rows"]:
+                SLOW_PENDING.add(tid)         # помечаем, чтобы воркер не пере-брал её, пока DOGE/DASH в очереди
+                patch_task(tid, {"results": out["results"], "alive": out["alive"],
+                                 "status": "running", "progress": f"{fast_done}/{out['total']}"})
+                _notify_changes(t, t.get("seed", ""), prev, out["results"], lbl)
+                SLOW_Q.put((tid, out["slow_rows"]))
+            else:
+                patch_task(tid, {"results": out["results"], "alive": out["alive"],
+                                 "status": "amber" if out["alive"] else "green",
+                                 "lastCheck": time.time(), "scan_done": True,
+                                 "progress": f"{out['total']}/{out['total']}"})
+                _notify_changes(t, t.get("seed", ""), prev, out["results"], lbl)
     except Exception as e:
         print("[scan] ошибка задачи", tid, e, flush=True)
         patch_task(tid, {"status": "red", "scanError": str(e)[:200]})
@@ -272,7 +330,7 @@ def worker_loop():
                     patch_task(t["id"], {"status": "running", "scan_done": False})
             tasks = load_tasks()
             pend = [t for t in tasks if not t.get("deleted") and t.get("mode") in ("A", "BA")
-                    and t.get("status") in ("running", "queued") and t["id"] not in BUSY]
+                    and t.get("status") in ("running", "queued") and t["id"] not in BUSY and t["id"] not in SLOW_PENDING]
             rem = len(pend) + len(BUSY)
             eff = SCAN_CTRL.effective(rem) if SCAN_CTRL else 1
             for t in pend:
@@ -521,7 +579,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._json({"error": "bad json"}, 400)
             now = time.time()
             if path == "/api/scan":                                  # Режим А — одна сид
-                seed = (body.get("seed") or "").strip().lower()
+                seed = _clean_seed(body.get("seed"))
                 if len(seed.split()) < 12:
                     return self._json({"error": "нужна валидная сид (12+ слов)"}, 400)
                 tid = secrets.token_hex(3)
@@ -541,7 +599,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     have = {t.get("seed") for t in tasks if t.get("owner") == user and not t.get("deleted")}
                     base = max([int(t["name"]) for t in tasks if t.get("owner") == user and str(t.get("name", "")).isdigit()] or [0])
                     for s in seeds[:20000]:
-                        s = (s or "").strip().lower()
+                        s = _clean_seed(s)
                         if len(s.split()) < 12:
                             continue
                         if s in have:
@@ -692,6 +750,8 @@ if __name__ == "__main__":
     HOST = os.environ.get("PUH_HOST", "0.0.0.0")     # на сервере за nginx: PUH_HOST=127.0.0.1
     if SCAN and os.environ.get("PUH_NO_WORKER") != "1":
         threading.Thread(target=worker_loop, daemon=True).start()
-        print("[puh-web] фоновый воркер скана запущен (24/7)", flush=True)
+        for _i in range(int(os.environ.get("PUH_SLOW_WORKERS", "3"))):   # фоновые воркеры DOGE/DASH
+            threading.Thread(target=_slow_worker, daemon=True).start()
+        print("[puh-web] фоновый воркер скана запущен (24/7) + DOGE/DASH-очередь", flush=True)
     print(f"[puh-web] http://{HOST}:{PORT}  (login: /login)", flush=True)
     http.server.ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()

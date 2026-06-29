@@ -16,7 +16,9 @@ EVM = {
     "Polygon": ["https://polygon-bor-rpc.publicnode.com", "https://1rpc.io/matic"],
 }
 ETC_RPCS = ["https://etc.rivet.link", "https://etc.etcdesktop.com"]
-ESPLORA = {"bitcoin": "https://blockstream.info", "litecoin": "https://litecoinspace.org"}
+# Пулы Esplora-совместимых нод (фолбэк + ротация). blockstream.info душит дата-центры (429) → рабочие первыми.
+ESPLORA = {"bitcoin": ["https://mempool.space", "https://btcscan.org", "https://blockstream.info"],
+           "litecoin": ["https://litecoinspace.org"]}
 KEYS = {"blockchair": []}
 
 # --- поверх — ключи/доп.ноды из keys.py (на сервере, не в git) ---
@@ -58,13 +60,23 @@ def _post(url, payload, timeout=20):
     except Exception:
         return None
 
-def esplora(base, addr):                                   # BTC/LTC — free, без ключа
-    d = _get(f"{base}/api/address/{addr}")
-    if d is None: return {"bal": "н/д", "received": "—", "txn": 0, "alive": False}
-    cs = d.get("chain_stats") or {}
-    funded, spent, txn = cs.get("funded_txo_sum", 0) or 0, cs.get("spent_txo_sum", 0) or 0, cs.get("tx_count", 0) or 0
-    bal = funded - spent
-    return {"bal": f"{bal/1e8:.8f}", "received": f"{funded/1e8:.8f}", "txn": txn, "alive": txn > 0 or funded > 0}
+def esplora(bases, addr):                                  # BTC/LTC — free, ротация+фолбэк по пулу нод
+    if isinstance(bases, str): bases = [bases]
+    start = _rr.get("esp", 0); _rr["esp"] = start + 1     # сдвигаем стартовую ноду → размазываем нагрузку
+    n = len(bases); limited = 0
+    for i in range(n):
+        base = bases[(start + i) % n]
+        try:
+            d = _get(f"{base}/api/address/{addr}")
+        except RateLimited:
+            limited += 1; continue                        # эта нода душит → пробуем следующую
+        if d is not None:
+            cs = d.get("chain_stats") or {}
+            funded, spent, txn = cs.get("funded_txo_sum", 0) or 0, cs.get("spent_txo_sum", 0) or 0, cs.get("tx_count", 0) or 0
+            bal = funded - spent
+            return {"bal": f"{bal/1e8:.8f}", "received": f"{funded/1e8:.8f}", "txn": txn, "alive": txn > 0 or funded > 0}
+    if limited: raise RateLimited()                        # все ноды залимичены → пусть ретрайнет позже
+    return {"bal": "н/д", "received": "—", "txn": 0, "alive": False}
 
 def blockchair(chain, addr):                               # DOGE/DASH — свой троттл, НЕ кидает RateLimited
     k = _rot("bc", KEYS["blockchair"])
