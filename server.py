@@ -127,7 +127,7 @@ def task_summary(t):
             "stopped": t.get("stopped"), "pausedAt": t.get("pausedAt"),
             "mode": t.get("mode", "B"), "alive": t.get("alive", 0), "lastCheck": t.get("lastCheck"),
             "progress": t.get("progress"), "deleted": t.get("deleted"),
-            "hits": t.get("hits", 0), "candidates": len(t.get("candidates", [])),
+            "hits": t.get("hits", 0), "candidates": len(t.get("candidates", [])), "mass": t.get("mass"),
             "results": len(t.get("results", [])), "owner": t.get("owner")}
 
 
@@ -528,7 +528,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 added = dup = 0
                 with LOCK:
                     tasks = load_tasks()
-                    have = {t.get("seed") for t in tasks if t.get("owner") == user}
+                    have = {t.get("seed") for t in tasks if t.get("owner") == user and not t.get("deleted")}
                     base = max([int(t["name"]) for t in tasks if t.get("owner") == user and str(t.get("name", "")).isdigit()] or [0])
                     for s in seeds[:20000]:
                         s = (s or "").strip().lower()

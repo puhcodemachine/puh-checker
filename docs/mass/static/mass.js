@@ -93,9 +93,29 @@
   var sums = [], idMap = {}, massRunning = false, filter = "all", search = "", page = 0, openId = null, listTimer = null;
   function rebuild() { idMap = {}; sums.forEach(function (s) { idMap[s.id] = s; }); }
 
+  // ---------- серверный режим (скан 24/7 на сервере) ----------
+  var SERVER = false;
+  function api(p, opts) { return fetch(p, Object.assign({ credentials: "same-origin", headers: { "Content-Type": "application/json" } }, opts || {})).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }); }
+  function srvStatus(st) { return st === "running" ? "scanning" : st === "amber" ? "alive" : st === "red" ? "error" : st === "green" ? "empty" : "pending"; }
+  function serverSync(then) {
+    api("/api/tasks").then(function (d) {
+      var t = ((d && d.tasks) || []).filter(function (x) { return x.mass && !x.deleted; });
+      sums = t.map(function (x) { return { id: x.id, name: x.name, seed: "", status: srvStatus(x.status), alive: x.alive || 0, lastCheck: x.lastCheck, created: x.created }; })
+        .sort(function (a, b) { return (+a.name || 0) - (+b.name || 0); });
+      rebuild(); renderStats(); renderList();
+      if (then) then();
+    });
+  }
+
   // ---------- загрузка ----------
   function bulkCreate(text) {
     var lines = text.split(/\r?\n/).map(function (s) { return s.trim().toLowerCase().replace(/\s+/g, " "); }).filter(Boolean);
+    if (SERVER) {
+      return api("/api/scan/bulk", { method: "POST", body: JSON.stringify({ seeds: lines }) }).then(function (r) {
+        var added = (r && r.added) || 0, dup = (r && r.dup) || 0;
+        return { added: added, dup: dup, invalid: Math.max(0, lines.length - added - dup), total: lines.length, server: true };
+      });
+    }
     var existing = {}; sums.forEach(function (s) { existing[s.seed] = 1; });
     var startNum = sums.length ? Math.max.apply(null, sums.map(function (s) { return +s.id || 0; })) : 0;
     var added = [], dup = 0, invalid = 0, seen = {};
@@ -213,7 +233,7 @@
     el.innerHTML = slice.map(function (s) {
       var alive = s.status === "alive", dot = alive ? "alive" : s.status === "scanning" ? "scan" : s.status === "error" || s.status === "invalid" ? "err" : s.status === "pending" ? "pending" : "";
       var meta = s.status === "scanning" ? "проверка…" : s.status === "alive" ? "● живых: " + s.alive : s.status === "empty" ? "пусто" : s.status === "invalid" ? "невалидна" : s.status === "error" ? "ошибка" : "в очереди";
-      return '<div class="mrow ' + (alive ? "alive" : s.status === "invalid" ? "invalid" : "") + '" onclick="massOpen(' + s.id + ')">' +
+      return '<div class="mrow ' + (alive ? "alive" : s.status === "invalid" ? "invalid" : "") + '" onclick="massOpen(\'' + s.id + '\')">' +
         '<span class="mdot ' + dot + '"></span><span class="mname">#' + esc(s.name) + '</span>' +
         '<span class="mseed">' + esc(s.seed) + '</span>' +
         '<span class="mmeta' + (alive ? " alive" : "") + '">' + meta + '</span>' +
@@ -224,6 +244,16 @@
   function renderDetail(id) {
     var s = idMap[id]; if (!s) return;
     var d = $("detail"); d.classList.remove("hidden"); openId = id;
+    if (SERVER) {
+      api("/api/tasks/" + id).then(function (data) {
+        var t = data && data.task, results = (t && t.results) || [];
+        var body = results.length ? buildReport(fatten(results)) : '<div class="ar-std" style="padding:8px">' + (s.status === "scanning" ? "идёт проверка на сервере…" : s.lastCheck ? "проверено · активных адресов нет" : "ещё не проверено") + "</div>";
+        var head = '<div class="detail-h"><b>#' + esc(s.name) + " · " + (s.status === "alive" ? "● ЖИВЫХ АДРЕСОВ: " + s.alive : s.status) + '</b><a onclick="massCloseDetail()">✕ закрыть</a></div>' +
+          '<div class="ar-std" style="word-break:break-all;margin-bottom:6px">' + esc((t && t.seed) || "") + "</div>";
+        d.innerHTML = head + body;
+      });
+      return;
+    }
     idbGetRes(id).then(function (results) {
       var body = results && results.length ? buildReport(fatten(results)) : '<div class="ar-std" style="padding:8px">' + (s.status === "scanning" ? "идёт проверка…" : s.status === "invalid" ? "сид невалидна — не проверяется" : s.lastCheck ? "проверено · активных адресов нет" : "ещё не проверено") + "</div>";
       var head = '<div class="detail-h"><b>#' + esc(s.name) + " · " + (s.status === "alive" ? "● ЖИВЫХ АДРЕСОВ: " + s.alive : s.status) + '</b><a onclick="massCloseDetail()">✕ закрыть</a></div>' +
@@ -240,9 +270,10 @@
   function refreshAll() { renderStats(); renderControls(); renderList(); }
 
   document.addEventListener("DOMContentLoaded", function () {
-    idbAllSum().then(function (rows) { sums = rows.sort(function (a, b) { return a.id - b.id; }); rebuild(); refreshAll();
-      // возобновить: если остались pending/«идёт» — но запускаем только по кнопке (большой объём). Авто-цикл по таймеру.
-      sums.forEach(function (s) { if (s.status === "scanning") s.status = "pending"; });
+    api("/api/account").then(function (a) {
+      SERVER = !!(a && a.user);                          // сервер → скан 24/7; иначе браузер (превью)
+      if (SERVER) { serverSync(); listTimer = setInterval(serverSync, 5000); }
+      else idbAllSum().then(function (rows) { sums = rows.sort(function (a, b) { return a.id - b.id; }); rows.forEach(function (s) { if (s.status === "scanning") s.status = "pending"; }); rebuild(); refreshAll(); });
     });
     $("load").addEventListener("click", function () {
       var paste = $("paste").value || "";
@@ -251,20 +282,23 @@
         $("parse-msg").className = "parse-msg muted"; $("parse-msg").textContent = "загрузка…";
         bulkCreate(text).then(function (r) {
           $("parse-msg").className = "parse-msg green";
-          $("parse-msg").textContent = "✓ добавлено: " + r.added + " · дубликаты: " + r.dup + " · невалидных: " + r.invalid + " (из " + r.total + " строк)";
-          $("paste").value = ""; $("file").value = ""; page = 0; refreshAll();
+          $("parse-msg").textContent = "✓ добавлено: " + r.added + " · дубликаты: " + r.dup + " · невалидных: " + r.invalid + " (из " + r.total + " строк)" + (r.server ? " — сервер сканит 24/7" : "");
+          $("paste").value = ""; $("file").value = ""; page = 0; if (SERVER) serverSync(); else refreshAll();
         });
       };
       var f = $("file").files[0];
       if (f) { var rd = new FileReader(); rd.onload = function () { doLoad(String(rd.result) + (paste ? "\n" + paste : "")); }; rd.readAsText(f); }
       else doLoad(paste);
     });
-    $("start").addEventListener("click", scanLoop);
-    $("pause").addEventListener("click", pauseScan);
+    $("start").addEventListener("click", function () { if (SERVER) serverSync(); else scanLoop(); });
+    $("pause").addEventListener("click", function () { if (!SERVER) pauseScan(); });
     $("clear").addEventListener("click", function () {
       if (!sums.length) return;
       if (!confirm("Удалить ВСЕ " + sums.length + " задач масс-проверки? (главная панель не затрагивается)")) return;
-      massRunning = false; idbClear().then(function () { sums = []; rebuild(); openId = null; $("detail").classList.add("hidden"); page = 0; refreshAll(); $("parse-msg").className = "parse-msg muted"; $("parse-msg").textContent = "очищено"; });
+      if (SERVER) {
+        Promise.all(sums.map(function (s) { return api("/api/tasks/" + s.id + "/update", { method: "POST", body: JSON.stringify({ deleted: true }) }); }))
+          .then(function () { openId = null; $("detail").classList.add("hidden"); page = 0; serverSync(); $("parse-msg").className = "parse-msg muted"; $("parse-msg").textContent = "очищено"; });
+      } else { massRunning = false; idbClear().then(function () { sums = []; rebuild(); openId = null; $("detail").classList.add("hidden"); page = 0; refreshAll(); $("parse-msg").className = "parse-msg muted"; $("parse-msg").textContent = "очищено"; }); }
     });
     [].forEach.call(document.getElementsByClassName("chip"), function (ch) {
       ch.addEventListener("click", function () {
@@ -273,7 +307,6 @@
       });
     });
     $("search").addEventListener("input", function () { search = (this.value || "").trim().toLowerCase(); page = 0; renderList(); });
-    // авто-цикл 24ч: каждую минуту проверяем, есть ли просроченные, и если включено и не идёт — запускаем
-    setInterval(function () { if ($("auto").checked && !massRunning && dueCount() > 0) scanLoop(); }, 60000);
+    setInterval(function () { if (!SERVER && $("auto").checked && !massRunning && dueCount() > 0) scanLoop(); }, 60000);  // авто-цикл только для браузерного режима
   });
 })();
