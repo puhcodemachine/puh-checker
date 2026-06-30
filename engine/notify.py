@@ -18,7 +18,10 @@ def enabled():
 # --- цены USD (CoinGecko, кэш 10 мин) для порога масс-уведомлений ---
 _PRICES = {"t": 0.0, "p": {}}
 _CG = {"bitcoin": "BTC", "ethereum": "ETH", "litecoin": "LTC", "dogecoin": "DOGE", "dash": "DASH",
-       "ethereum-classic": "ETC", "binancecoin": "BNB", "polygon-ecosystem-token": "MATIC"}
+       "ethereum-classic": "ETC", "binancecoin": "BNB", "polygon-ecosystem-token": "MATIC",
+       "avalanche-2": "AVAX", "fantom": "FTM", "hyperliquid": "HYPE", "tron": "TRX",
+       "solana": "SOL", "cardano": "ADA", "monero": "XMR"}
+_STABLE = ("USDT", "USDC")                # стейблы считаем по $1
 
 def prices():
     now = time.time()
@@ -41,14 +44,19 @@ def usd(coin, bal):                       # USD-оценка простого б
     except Exception:
         return 0.0
 
+def _tokens_usd(tk):                      # {токен: баланс} — стейблы по $1, остальное по цене
+    p = prices()
+    try:
+        return sum((bal or 0) * (1.0 if sym in _STABLE else (p.get(sym, 0) or 0)) for sym, bal in tk.items())
+    except Exception:
+        return 0.0
+
 def row_usd(row):                         # корректная оценка строки результата
-    ev = row.get("evm")                   # EVM: каждая сеть — свой токен (ETH/BNB/MATIC), НЕ суммой
-    if ev:
-        p = prices()
-        try:
-            return sum((bal or 0) * (p.get(sym, 0) or 0) for sym, bal in ev.items())
-        except Exception:
-            return 0.0
+    if "evm" in row:                      # EVM: нативные по токенам (CoinGecko) + ERC20-токены ($ от Alchemy)
+        return _tokens_usd(row.get("evm") or {}) + (row.get("tusd") or 0)
+    tk = row.get("tokens")                # Tron: TRX + USDT/USDC
+    if tk:
+        return _tokens_usd(tk)
     return usd(row.get("coin"), row.get("bal"))
 
 def _esc(s):
@@ -61,20 +69,44 @@ def _explorer(coin, chains, addr):
     if coin == "DOGE": return "https://blockchair.com/dogecoin/address/" + addr
     if coin == "DASH": return "https://blockchair.com/dash/address/" + addr
     if coin == "ETC": return "https://etc.blockscout.com/address/" + addr
+    if coin == "TRX": return "https://tronscan.org/#/address/" + addr
+    if coin == "SOL": return "https://solscan.io/account/" + addr
+    if coin == "ADA": return "https://cardanoscan.io/address/" + addr
     if c == "BSC": return "https://bscscan.com/address/" + addr
     if c == "Polygon": return "https://polygonscan.com/address/" + addr
+    if c == "Arbitrum": return "https://arbiscan.io/address/" + addr
+    if c == "Optimism": return "https://optimistic.etherscan.io/address/" + addr
+    if c == "Base": return "https://basescan.org/address/" + addr
+    if c == "Avalanche": return "https://snowtrace.io/address/" + addr
+    if c == "Fantom": return "https://ftmscan.com/address/" + addr
+    if c == "HyperEVM": return "https://hyperevmscan.io/address/" + addr
     return "https://etherscan.io/address/" + addr
 
-def send(text):
-    if not enabled(): return False
+def api(method, params=None, timeout=35):
+    """Универсальный вызов Telegram Bot API (для бота-панели: getUpdates, callback, и т.д.)."""
+    if not (TOKEN and CHAT):
+        return None
     try:
-        data = urllib.parse.urlencode({"chat_id": CHAT, "text": text, "parse_mode": "HTML",
-                                       "disable_web_page_preview": "true"}).encode()
-        req = urllib.request.Request(f"https://api.telegram.org/bot{TOKEN}/sendMessage", data=data)
-        with urllib.request.urlopen(req, timeout=15, context=_CTX) as r:
-            return r.status == 200
+        data = urllib.parse.urlencode(params or {}).encode()
+        req = urllib.request.Request(f"https://api.telegram.org/bot{TOKEN}/{method}", data=data)
+        with urllib.request.urlopen(req, timeout=timeout, context=_CTX) as r:
+            return json.loads(r.read().decode("utf-8", "replace"))
     except Exception:
+        return None
+
+PANEL_KB = json.dumps({"inline_keyboard": [[
+    {"text": "📡 Статус", "callback_data": "status"},
+    {"text": "📊 Статистика", "callback_data": "stats"}]]})
+
+def send(text):
+    if not enabled():
         return False
+    r = api("sendMessage", {"chat_id": CHAT, "text": text, "parse_mode": "HTML", "disable_web_page_preview": "true"})
+    return bool(r and r.get("ok"))
+
+def send_panel(text, chat=None):
+    return api("sendMessage", {"chat_id": chat or CHAT, "text": text, "parse_mode": "HTML",
+                               "disable_web_page_preview": "true", "reply_markup": PANEL_KB})
 
 def _fbal(b):
     try: return float(b)

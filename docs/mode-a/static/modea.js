@@ -38,10 +38,10 @@
   // ---------- рендер отчёта ----------
   function aliveCount(results) { return (results || []).filter(function (r) { return r.alive; }).length; }
   function buildReport(rows) {
-    var coins = ["BTC", "LTC", "DOGE", "DASH", "ETH", "ETC"], html = "";
+    var coins = ["BTC", "LTC", "DOGE", "DASH", "ETH", "ETC", "TRX", "SOL", "ADA", "XMR"], html = "";
     coins.forEach(function (coin) {
       var rs = rows.filter(function (r) { return r.coin === coin; }); if (!rs.length) return;
-      html += '<div class="net-group"><div class="net-h">' + coin + (coin === "ETH" ? " · EVM (ETH/BSC/Polygon)" : "") + "</div>";
+      html += '<div class="net-group"><div class="net-h">' + coin + (coin === "ETH" ? " · EVM ×9 (ETH/L2/BSC/Polygon/Avalanche/Fantom/HyperEVM)" : "") + "</div>";
       rs.forEach(function (r) {
         var a = r.act || {}, alive = a.alive;
         var balTxt = a.bal == null ? "…" : esc(a.bal) + usdStr(r, a) + (a.received && a.received !== "—" && a.received !== a.bal ? " (получено " + esc(a.received) + ")" : "");

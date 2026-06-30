@@ -29,15 +29,19 @@ def check_retry(row, ctrl, tries=4):
             if n < tries: time.sleep(0.3 * n)
     return {"bal": "н/д", "received": "—", "txn": 0, "alive": False, "chains": ""}
 
-SLOW_CHAINS = ("dogecoin", "dash")     # DOGE/DASH — отдельная медленная очередь (никогда не убираем)
+SLOW_CHAINS = ("dogecoin", "dash", "tron", "solana", "cardano", "monero")   # медленные/внешние провайдеры — в фон
 
 
 def _result(row, a):
     r = {"coin": row["coin"], "std": row["std"], "path": row["path"], "addr": row["addr"],
          "bal": a["bal"], "received": a.get("received", "—"), "txn": a.get("txn", 0),
          "alive": a["alive"], "chains": a.get("chains", "")}
-    if a.get("evm"):
-        r["evm"] = a["evm"]                         # {токен: баланс} по сетям — для корректной оценки в $
+    if "evm" in a:
+        r["evm"] = a["evm"]                         # {токен: баланс} по сетям (даже пустой — чтобы tusd учёлся)
+    if a.get("tusd"):
+        r["tusd"] = a["tusd"]                       # суммарный $ ERC20-токенов (Alchemy)
+    if a.get("tokens"):
+        r["tokens"] = a["tokens"]                   # Tron: {TRX/USDT/USDC: баланс}
     return r
 
 
@@ -65,6 +69,21 @@ def scan_seed(seed, ctrl=None, addr_workers=4, on_progress=None):
 
 def check_one(row):                    # одна DOGE/DASH-проверка для фоновой очереди (blockchair сам троттлит)
     return _result(row, activity.check(row))
+
+def check_slow_batch(rows):            # фон-очередь: DOGE/DASH пачкой (1 запрос на 3), Tron — поштучно (TronGrid)
+    by = {}
+    for r in rows:
+        by.setdefault(r["chain"], []).append(r)
+    out = []
+    for chain, rs in by.items():
+        if chain in ("dogecoin", "dash"):
+            res = activity.check_many(chain, [r["addr"] for r in rs])
+            for r in rs:
+                out.append(_result(r, res.get(r["addr"]) or {"bal": "н/д", "received": "—", "txn": 0, "alive": False}))
+        else:                          # tron и пр.
+            for r in rs:
+                out.append(_result(r, activity.check(r)))
+    return out
 
 if __name__ == "__main__":
     seed = sys.argv[1] if len(sys.argv) > 1 else "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"

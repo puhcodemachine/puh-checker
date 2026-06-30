@@ -263,7 +263,7 @@ def _slow_worker():
             if not cur or cur.get("deleted") or cur.get("status") == "red":
                 continue
             prev = cur.get("results") or []
-            checked = [SCAN.check_one(r) for r in slow_rows]      # DOGE/DASH (blockchair сам троттлит)
+            checked = SCAN.check_slow_batch(slow_rows)            # DOGE/DASH пачкой (1 запрос на 3 адреса)
             _enrich_usd(checked)
             cmap = {(c["coin"], c["path"]): c for c in checked}
             with LOCK:
@@ -413,6 +413,115 @@ def worker_loop():
             time.sleep(2)
         except Exception as e:
             print("[worker] loop err", e, flush=True)
+            time.sleep(5)
+
+
+# ---------- Telegram-бот: панель Статус / Статистика по кнопкам ----------
+def _fmt_ago(ts):
+    if not ts:
+        return "—"
+    d = time.time() - ts
+    if d < 60: return "только что"
+    if d < 3600: return f"{int(d/60)} мин назад"
+    if d < 86400: return f"{int(d/3600)}ч {int(d%3600/60)}м назад"
+    return f"{int(d/86400)}д назад"
+
+
+def _fmt_in(ts):
+    if not ts:
+        return "—"
+    d = ts - time.time()
+    if d <= 0: return "сейчас"
+    if d < 3600: return f"через {int(d/60)} мин"
+    if d < 86400: return f"через {int(d/3600)}ч {int(d%3600/60)}м"
+    return f"через {int(d/86400)}д {int(d%86400/3600)}ч"
+
+
+def _bot_status_text():
+    tasks = [t for t in load_tasks() if not t.get("deleted")]
+    lasts = [t.get("lastCheck") for t in tasks if t.get("lastCheck")]
+    done = [t for t in tasks if t.get("scan_done") and t.get("lastCheck")]
+    nexts = [t["lastCheck"] + 86400 for t in done]
+    inq = len([t for t in tasks if t.get("status") in ("running", "queued")])
+    return "\n".join([
+        "🖥 <b>СТАТУС · ПУХ·ROBCO</b>",
+        f"🕐 Последний апдейт: {_fmt_ago(max(lasts) if lasts else None)}",
+        f"⏭ Следующий апдейт: {_fmt_in(min(nexts) if nexts else None)}",
+        f"📋 В очереди на проверку: <b>{inq}</b> сид",
+        f"⚙ Сейчас сканится: {len(BUSY)}",
+        f"🐢 DOGE/DASH в фон-очереди: {len(SLOW_PENDING)}",
+    ])
+
+
+def _bot_stats_text():
+    s = _stats("PUH", True)
+    a, t = s["addresses"], s["tasks"]
+    tasks = [x for x in load_tasks() if not x.get("deleted")]
+    nexts = [x["lastCheck"] + 86400 for x in tasks if x.get("scan_done") and x.get("lastCheck")]
+    inq = len([x for x in tasks if x.get("status") in ("running", "queued")])
+    top = s["by_path"][0] if s["by_path"] else None
+    lines = [
+        "📊 <b>СТАТИСТИКА</b>",
+        f"🔑 Проверено: <b>{a['scanned']}</b> адресов / {t['total']} задач",
+        f"🟢 Живых адресов: <b>{a['alive']}</b>",
+        f"💰 Общий баланс: <b>${s['total_usd']:,.2f}</b>",
+        f"⏭ Ближайшая проверка: {_fmt_in(min(nexts) if nexts else None)}",
+        f"📋 В очереди на ближайшую: <b>{inq}</b> сид",
+        f"⏳ Задачи: А {t['A']} · Б→А {t['BA']} · масс {t['mass']}",
+    ]
+    if top:
+        lines.append(f"🏆 Топ-путь: {top['coin']} {top['std']} — {top['alive']} живых")
+    return "\n".join(lines)
+
+
+def _bot_handle(u):
+    cb = u.get("callback_query")
+    if cb:
+        chat = str((((cb.get("message") or {}).get("chat")) or {}).get("id"))
+        if chat == str(NOTIFY.CHAT):
+            data = cb.get("data")
+            NOTIFY.send_panel(_bot_status_text() if data == "status" else
+                              _bot_stats_text() if data == "stats" else "?")
+        NOTIFY.api("answerCallbackQuery", {"callback_query_id": cb.get("id")}, timeout=10)
+        return
+    msg = u.get("message") or {}
+    if str((msg.get("chat") or {}).get("id")) != str(NOTIFY.CHAT):
+        return
+    text = (msg.get("text") or "").strip().lower()
+    if text in ("/start", "/panel", "/menu", "меню", "панель"):
+        NOTIFY.send_panel("🤖 <b>Панель ПУХ·ROBCO</b>\nВыбери, что показать:")
+    elif text.startswith("/status") or text == "статус":
+        NOTIFY.send_panel(_bot_status_text())
+    elif text.startswith("/stats") or text == "статистика":
+        NOTIFY.send_panel(_bot_stats_text())
+
+
+def _bot_loop():
+    if not (NOTIFY and NOTIFY.enabled()):
+        return
+    try:
+        NOTIFY.api("setMyCommands", {"commands": json.dumps([
+            {"command": "status", "description": "📡 Статус работы"},
+            {"command": "stats", "description": "📊 Статистика"},
+            {"command": "panel", "description": "🤖 Панель"}])}, timeout=10)
+        last = NOTIFY.api("getUpdates", {"offset": -1, "timeout": 0}, timeout=10)   # пропустить старый бэклог
+        offset = (last["result"][-1]["update_id"] + 1) if last and last.get("result") else 0
+    except Exception:
+        offset = 0
+    print("[puh-web] Telegram-бот панели запущен", flush=True)
+    while True:
+        try:
+            r = NOTIFY.api("getUpdates", {"offset": offset, "timeout": 25}, timeout=35)
+            for u in (r or {}).get("result", []):
+                offset = u["update_id"] + 1
+                try:
+                    _bot_handle(u)
+                except Exception as e:
+                    print("[bot] handle", e, flush=True)
+            if not r:
+                time.sleep(3)
+        except Exception as e:
+            print("[bot] loop", e, flush=True)
             time.sleep(5)
 
 
@@ -833,5 +942,7 @@ if __name__ == "__main__":
         for _i in range(int(os.environ.get("PUH_SLOW_WORKERS", "3"))):   # фоновые воркеры DOGE/DASH
             threading.Thread(target=_slow_worker, daemon=True).start()
         print("[puh-web] фоновый воркер скана запущен (24/7) + DOGE/DASH-очередь", flush=True)
+    if NOTIFY and NOTIFY.enabled() and os.environ.get("PUH_NO_BOT") != "1":
+        threading.Thread(target=_bot_loop, daemon=True).start()
     print(f"[puh-web] http://{HOST}:{PORT}  (login: /login)", flush=True)
     http.server.ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
