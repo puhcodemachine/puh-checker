@@ -195,15 +195,13 @@
 
   // ---------- рендер ----------
   function counts() {
-    var c = { total: sums.length, done: 0, alive: 0, queue: 0, err: 0, scanning: 0 };
+    var c = { total: sums.length, done: 0, alive: 0, queue: 0, err: 0 };
     sums.forEach(function (s) {
-      if (s.lastCheck) c.done++;
-      if (s.status === "alive") c.alive++;
-      else if (s.status === "scanning") c.scanning++;
-      else if (s.status === "error" || s.status === "invalid") c.err++;
-      if (s.status === "pending") c.queue++;
+      if ((s.alive || 0) > 0) c.alive++;                                  // с активностью = реально найдено (вне зависимости от статуса)
+      if (s.status === "scanning" || s.status === "pending") c.queue++;   // в очереди/идёт сейчас
+      else c.done++;                                                      // проверено (завершено); done+queue = total
+      if (s.status === "error" || s.status === "invalid") c.err++;
     });
-    c.queue += c.scanning;
     return c;
   }
   function renderStats() {

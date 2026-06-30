@@ -39,7 +39,7 @@ SECURE_COOKIE = bool(os.environ.get("PUH_HTTPS"))  # на проде с HTTPS: P
 MAX_BODY = 2_000_000                             # лимит тела запроса (анти-DoS)
 MAX_LOGIN_FAILS = 8                              # блок после N неудач за окно
 LOGIN_WINDOW = 600                               # окно блокировки, сек
-SUBAPPS = ("mode-a", "mode-b", "mass", "stats")  # отдельные страницы (под авторизацией)
+SUBAPPS = ("mode-a", "mode-b", "mass", "stats", "airdrop")  # отдельные страницы (под авторизацией)
 CTYPES = {".js": "application/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
           ".html": "text/html; charset=utf-8", ".json": "application/json; charset=utf-8",
           ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon",
@@ -135,6 +135,32 @@ def task_summary(t):
             "results": len(t.get("results", [])), "owner": t.get("owner")}
 
 
+def _airdrops(user, adm):
+    """Роспись по кошелькам: найденная сумма $ (розданные аирдропы = токены/балансы) + адрес для claim."""
+    tasks = [t for t in load_tasks() if not t.get("deleted") and (adm or t.get("owner") == user)]
+    out = []
+    for t in tasks:
+        if t.get("mode") not in ("A", "BA"):
+            continue
+        results = t.get("results") or []
+        if t.get("mode") == "BA":
+            results = [r for c in (t.get("candidates") or []) for r in (c.get("results") or [])]
+        seen, uniq = set(), []
+        for r in results:                                  # дедуп по адресу (Standard[0]==Ledger[0] — один адрес)
+            if r.get("alive") and r.get("addr") not in seen:
+                seen.add(r.get("addr")); uniq.append(r)
+        usd = sum((r.get("usd") or 0) for r in uniq)
+        evm = next((r["addr"] for r in results if r.get("std") == "Standard (MetaMask)"
+                    and r.get("path", "").endswith("0/0")), None)
+        top = sorted([r for r in uniq if (r.get("usd") or 0) > 0], key=lambda r: -(r.get("usd") or 0))[:3]
+        out.append({"id": t["id"], "name": t.get("name"), "usd": round(usd, 2), "addr": evm,
+                    "mass": bool(t.get("mass")),
+                    "top": [{"coin": r["coin"], "bal": r["bal"], "usd": round(r.get("usd") or 0, 2)} for r in top]})
+    out.sort(key=lambda x: -x["usd"])
+    return {"wallets": out, "total_usd": round(sum(w["usd"] for w in out), 2),
+            "with_value": len([w for w in out if w["usd"] > 0]), "total": len(out)}
+
+
 def _stats(user, adm):
     """Агрегат по всем задачам пользователя: живость путей, монеты, общий баланс $, топ находок."""
     tasks = [t for t in load_tasks() if not t.get("deleted") and (adm or t.get("owner") == user)]
@@ -144,6 +170,7 @@ def _stats(user, adm):
     tk = {"A": 0, "BA": 0, "mass": 0, "alive_tasks": 0}
 
     def consume(rows):
+        seen = set()                                       # дедуп по адресу (Standard[0]==Ledger[0] — один адрес)
         for r in rows or []:
             if r.get("bal") in ("…очередь", "н/д", None):
                 continue
@@ -153,8 +180,10 @@ def _stats(user, adm):
             bp["scanned"] += 1; bc["scanned"] += 1; cnt["scanned"] += 1
             if r.get("alive"):
                 u = NOTIFY.row_usd(r) if NOTIFY else 0.0
-                bp["alive"] += 1; bc["alive"] += 1; cnt["alive"] += 1
-                bp["usd"] += u; bc["usd"] += u; total_usd[0] += u
+                bp["alive"] += 1; bc["alive"] += 1
+                bp["usd"] += u; bc["usd"] += u
+                if r.get("addr") not in seen:              # деньги и «живых адресов» — по уникальным адресам
+                    seen.add(r.get("addr")); cnt["alive"] += 1; total_usd[0] += u
                 for ch in (r.get("chains") or "").split(","):
                     ch = ch.strip()
                     if ch:
@@ -701,6 +730,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if not user:
                 return self._json({"error": "auth"}, 401)
             return self._json(_stats(user, user_role(user) == "admin"))
+        if path == "/api/airdrops":
+            user = self._user()
+            if not user:
+                return self._json({"error": "auth"}, 401)
+            return self._json(_airdrops(user, user_role(user) == "admin"))
         if path == "/api/admin/users":
             user = self._user()
             if not user:

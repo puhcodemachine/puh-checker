@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ПУХ · АИРДРОП</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#050805;--panel:#0a110b;--green:#32c266;--green-dim:#1a6a35;--amber:#e8b73a;--red:#e85a5a;--txt:#6fbe87;--muted:#386b49;--line:#143f24}
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{background:var(--bg);color:var(--txt);font-family:'Share Tech Mono',ui-monospace,monospace;overflow-y:auto}
+  body::before{content:"";position:fixed;inset:0;z-index:9;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(0,0,0,.18) 0,rgba(0,0,0,.18) 1px,transparent 2px,transparent 3px);mix-blend-mode:multiply}
+  .topbar{position:relative;z-index:1;display:flex;justify-content:space-between;align-items:center;padding:13px 20px;border-bottom:1px solid var(--green-dim)}
+  .topbar a{color:var(--muted);font-size:12px;text-decoration:none;border:1px solid var(--line);padding:7px 12px}
+  .topbar a:hover{border-color:var(--green);color:var(--green)}
+  .brand{display:flex;align-items:center;gap:10px}
+  .emblem{width:30px;height:30px;display:grid;place-items:center;border-radius:6px;background:linear-gradient(135deg,var(--green),#179a50);color:#04130a;font-weight:800;font-size:16px}
+  .brand b{font-size:15px;letter-spacing:1.5px;color:var(--green)}
+  .brand span{display:block;font-size:10px;color:var(--muted);letter-spacing:2px}
+  .wrap{position:relative;z-index:1;max-width:1080px;margin:0 auto;padding:22px}
+  h1{font-size:16px;letter-spacing:1.5px;color:var(--green);margin:0 0 4px}
+  .lead{color:var(--muted);font-size:12.5px;margin:0 0 16px;line-height:1.55}
+  .note{border:1px dashed var(--line);background:#070f07;padding:11px 13px;margin:0 0 16px;font-size:12px;color:var(--muted);line-height:1.5}
+  .stats{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 14px}
+  .stat{flex:1;min-width:150px;border:1px solid var(--line);background:var(--panel);padding:12px 14px}
+  .stat .n{font-size:23px;color:var(--green);letter-spacing:1px}
+  .stat .l{font-size:10px;color:var(--muted);letter-spacing:1px;margin-top:3px}
+  .stat.usd .n{color:var(--amber)}
+  .bar2{display:flex;gap:8px;align-items:center;margin-bottom:12px}
+  .search{flex:1;min-width:160px;background:#070f07;border:1px solid var(--line);color:var(--txt);font-family:inherit;font-size:12.5px;padding:8px 11px;outline:none}
+  .search:focus{border-color:var(--green)}
+  .chip{font-size:11px;padding:7px 11px;border:1px solid var(--line);color:var(--muted);cursor:pointer;letter-spacing:.5px}
+  .chip.active{border-color:var(--green);color:var(--green);background:rgba(34,160,86,.08)}
+  .refresh{background:rgba(34,160,86,.1);border:1px solid var(--green);color:var(--green);padding:8px 13px;font-family:inherit;font-size:12px;cursor:pointer}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th,td{text-align:left;padding:8px 9px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-weight:400;font-size:11px;letter-spacing:.5px;text-transform:uppercase}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  tr:hover td{background:rgba(34,160,86,.05)}
+  .wname{color:var(--green)}
+  .sum{color:var(--amber);font-weight:700}
+  .holds{color:var(--muted);font-size:11px}
+  .claim{color:#04130a;background:var(--green);padding:5px 11px;text-decoration:none;font-size:11px;letter-spacing:.5px;display:inline-block}
+  .claim:hover{filter:brightness(1.12)}
+  .no{color:var(--red);font-weight:700;letter-spacing:1px}
+  .pager{display:flex;gap:8px;justify-content:center;align-items:center;margin-top:14px}
+  .pager button{background:rgba(34,160,86,.1);border:1px solid var(--line);color:var(--green);padding:6px 12px;cursor:pointer;font-family:inherit}
+  .pager button:disabled{opacity:.4;cursor:default}
+  .empty{color:var(--muted);font-size:12.5px;padding:18px;border:1px dashed var(--line);text-align:center}
+  .upd{color:var(--muted);font-size:11px}
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand"><div class="emblem">П</div><div><b>ПУХ · АИРДРОП</b><span>монетизация кошельков</span></div></div>
+    <a href="../">← к панели</a>
+  </div>
+
+  <div class="wrap">
+    <h1>&gt; АИРДРОП · МОНЕТИЗАЦИЯ</h1>
+    <p class="lead">Роспись по каждому кошельку: найденная сумма в $ (розданные тебе аирдропы — токены и балансы) и ссылка для управления/продажи. Где пусто — <span class="no">НЕТ</span>.</p>
+    <div class="note">⚠ Честно: единого API «все аирдропы планеты» не существует (агрегаторы закрыты, бесплатные чекеры — скам). Здесь показана <b>реально найденная ценность</b> по нашим сканам (claimed-аирдропы = токены в кошельках, фильтр скама ≥$1). Для невостребованных (unclaimed) аирдропов — отдельные claim-страницы проектов или платный агрегатор.</p>
+
+    <div class="stats" id="cards"></div>
+
+    <div class="bar2">
+      <input class="search" id="search" placeholder="поиск по имени кошелька / #…">
+      <span class="chip active" id="f-value" onclick="setF('value')">с ценностью</span>
+      <span class="chip" id="f-all" onclick="setF('all')">все</span>
+      <button class="refresh" id="refresh">↻</button>
+      <span class="upd" id="upd"></span>
+    </div>
+
+    <div id="list"></div>
+    <div class="pager" id="pager"></div>
+  </div>
+
+  <script src="static/airdrop.js"></script>
+</body>
+</html>

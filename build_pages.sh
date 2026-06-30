@@ -48,6 +48,13 @@ if [ -d ../stats ]; then
   cp ../stats/index.html docs/stats/index.html
 fi
 
+# --- Аирдроп (../airdrop) ---
+if [ -d ../airdrop ]; then
+  mkdir -p docs/airdrop/static
+  cp ../airdrop/static/*.js docs/airdrop/static/
+  cp ../airdrop/index.html docs/airdrop/index.html
+fi
+
 # --- барьер в обе страницы ---
 GATE_HASH="$(cat .gate_hash 2>/dev/null || echo '')"
 GATE_HASH="$GATE_HASH" /root/PUH/.venv/bin/python - <<'PY'
